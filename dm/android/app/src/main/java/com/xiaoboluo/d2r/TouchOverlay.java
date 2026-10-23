@@ -432,6 +432,7 @@ public final class TouchOverlay extends View {
     /** Direction feedback uses the same native finger ownership as casting.
      * Rotate the rim, keeping the imported skill glyph upright and recognizable. */
     private void aimFeedback(Canvas canvas) {
+        float scale=layout[4+12*5+2]/60;
         for (int i=0;i<5;++i) {
             int a=AIM+i*6, p=4+i*5;
             if (layout[a]==0 || layout[p+3]==0) continue;
@@ -441,13 +442,13 @@ public final class TouchOverlay extends View {
             int color=cancelling?0xffd7786c:0xffd6ccb5;
             Paint rim=stroke(color,1.25f);
             rim.setAlpha(cancelling?240:190);
-            canvas.drawCircle(x,y,r+7,rim);
+            canvas.drawCircle(x,y,r+18*scale,rim);
             // The native displacement is already radial-clamped to 18dp.
             skill(canvas,i,x+dx,y+dy,r,true,false);
             if (ux!=0 || uy!=0) {
                 float angle=(float)Math.toDegrees(Math.atan2(uy,ux));
                 canvas.save(); canvas.translate(x,y); canvas.rotate(angle);
-                float rr=r+8;
+                float rr=r+19*scale;
                 canvas.drawArc(new RectF(-rr,-rr,rr,rr),-32,64,false,rim);
                 Path arrow=new Path();
                 arrow.moveTo(rr+6,0); arrow.lineTo(rr-1,-4); arrow.lineTo(rr-1,4); arrow.close();

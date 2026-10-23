@@ -93,11 +93,41 @@ static void fe_event_locked(const touch_event *e) {
     if (e->phase == 2) fe_slot = -1;
 }
 
+static void space_combat_controls_locked(void) {
+    dm_tc_layout *l=&tc.layout;
+    if (l->height<340) return; /* Compact windows retain their fitted fan. */
+    float k=dm_tc_scale_for_size(l->width,l->height);
+    /* Android's larger direction ring needs a little more room at the right
+     * edge. Keep button sizes and all shared input travel/timing unchanged. */
+    l->target[DM_TC_MAIN].x-=14*k;
+    l->target[DM_TC_MAIN].y-=6*k;
+    const dm_tc_target main=l->target[DM_TC_MAIN];
+    const float dx[4]={-110,-98,-44,36},dy[4]={22,-58,-112,-112};
+    for(int i=0;i<4;++i) {
+        l->target[DM_TC_SKILL1+i].x=main.x+dx[i]*k;
+        l->target[DM_TC_SKILL1+i].y=main.y+dy[i]*k;
+    }
+    const dm_tc_target s4=l->target[DM_TC_SKILL4];
+    l->target[DM_TC_PORTAL].x=s4.x;
+    l->target[DM_TC_PORTAL].y=s4.y-s4.r-16*k-l->target[DM_TC_PORTAL].r;
+    if(l->swap_above) {
+        l->swap.x=main.x-138*k; l->swap.y=main.y-132*k;
+    } else {
+        float px=l->target[DM_TC_PORTAL].x-main.x,py=l->target[DM_TC_PORTAL].y-main.y;
+        l->swap.x=main.x+px*cosf(.46f)+py*sinf(.46f);
+        l->swap.y=main.y-px*sinf(.46f)+py*cosf(.46f);
+    }
+    float first=l->swap.x-l->swap.r;
+    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i) first=fminf(first,l->target[i].x-l->target[i].r);
+    l->joy_max_x=fmaxf(l->joy_min_x,fminf(l->joy_max_x,first-l->joy_radius-2*k));
+    l->joy_zone_r=fmaxf(l->joy_zone_l,fminf(l->joy_zone_r,l->joy_max_x));
+}
 static void init_locked(void) {
     if (ready) return;
     aim_feedback_reset();
     dm_tc_set_tall_scale(tablet_layout);
     dm_tc_init(&tc, width, height);
+    space_combat_controls_locked();
     tc.mouse_click_mode = 1;
     dm_tc_set_navigation_mode(&tc, 1);
     dm_tc_enable_targets(&tc, dm_tc_nav_mask(nav_pad()));   /* 开局读取期间也是面板态，同样不出圆钮 | loading at game start is panel state too, no buttons either */
@@ -315,12 +345,12 @@ static dm_tc_target quick_circle(int index) {
     /* Auxiliary controls form a quiet, aligned row over the existing fan;
      * they no longer extend the combat arc toward the middle of the screen. */
     float r=18*k, y=portal->y-70*k;
-    float x=portal->x-(index==1 ? 56 : 0)*k;
+    float x=portal->x-(index==1 ? 120 : 60)*k;
     if (y-r<safe_top+4*k) {
         /* Compact tablet windows have no row above the portal. Keep both
          * circles together to its left, clear of the original combat slots. */
         y=fmaxf(safe_top+4*k+r,portal->y);
-        x=portal->x-(index==1 ? 112 : 56)*k;
+        x=portal->x-(index==1 ? 124 : 64)*k;
     }
     return (dm_tc_target){x,y,r,0};
 }
@@ -417,7 +447,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         dm_tc_set_safe_insets(safe_left,safe_right); dm_tc_set_edge_bottom(safe_bottom); dm_tc_set_safe_bottom(safe_bottom);
         dm_ui_safe_left((int)lroundf(safe_left * 2160 / height));
         dm_ui_safe_right((int)lroundf(safe_right * 2160 / height));
-        dm_tc_resize(&tc,width,height); resizing = 0;
+        dm_tc_resize(&tc,width,height); space_combat_controls_locked(); resizing = 0;
     }
     if (!focused) { pthread_mutex_unlock(&lock); return; }
     sync_host();

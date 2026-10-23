@@ -106,7 +106,11 @@ static void test_legacy_hidden_cancel_removed_android_only(void) {
     gameplay_fixture(); dm_tc_target main=tc.layout.target[DM_TC_MAIN];
     dm_android_touch_event(0,0,main.x,main.y); REQUIRE(hold_frame(.1)==DM_BTN_A);
     REQUIRE(tc.layout.target[DM_TC_MAP].r==0);
-    dm_android_touch_event(1,0,width-30,30); REQUIRE(hold_frame(.1)==DM_BTN_A);
+    /* The visible cancel now lives at the top right. Probe a corner of the
+     * removed legacy square that is outside the actual visible circle. */
+    dm_tc_target c=aim_feedback_circle();
+    REQUIRE(hypotf(width-52-c.x,8-c.y)>c.r);
+    dm_android_touch_event(1,0,width-52,8); REQUIRE(hold_frame(.1)==DM_BTN_A);
     REQUIRE(tc.finger[0].active && !tc.finger[0].aim_cancelled);
     dm_android_touch_cancel_pending(); REQUIRE(hold_frame(.1)==0);
     dm_tc_set_navigation_mode(&tc,1); REQUIRE(hold_frame(.1)==0);
@@ -139,6 +143,16 @@ static void test_circle_clear_mainstream_layouts(void) {
         dm_android_touch_tablet(n==4); dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16);
         dm_android_touch_margins(margin?96:0,margin?96:0); REQUIRE(hold_frame(.1)==0);
         dm_tc_target c=aim_feedback_circle(); float k=dm_tc_scale_for_size(width,height);
+        REQUIRE(c.x>width*.75f && c.y<height*.25f);
+        REQUIRE(tc.layout.target[DM_TC_SKILL4].x-tc.layout.target[DM_TC_SKILL3].x>=79.9f*k);
+        REQUIRE(hypotf(tc.layout.target[DM_TC_SKILL2].x-tc.layout.target[DM_TC_SKILL1].x,
+                       tc.layout.target[DM_TC_SKILL2].y-tc.layout.target[DM_TC_SKILL1].y)>79*k);
+        for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
+            dm_tc_target t=tc.layout.target[i];
+            /* Actual enlarged ring + rotating arrow's outer point. */
+            REQUIRE(t.x+t.r+25*k<=width-safe_right);
+            REQUIRE(t.y+t.r+25*k<=height-safe_bottom);
+        }
         if(!aim_feedback_circle_clear(c.x,c.y,c.r,k)) fprintf(stderr,"circle_clear size=%u above=%d margin=%d circle=%.1f,%.1f,r%.1f\n",n,above,margin,c.x,c.y,c.r);
         REQUIRE(aim_feedback_circle_clear(c.x,c.y,c.r,k));
         REQUIRE(c.x-c.r>=safe_left && c.x+c.r<=width-safe_right);

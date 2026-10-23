@@ -50,15 +50,14 @@ static dm_tc_target aim_feedback_circle_compute(void) {
     float k=dm_tc_scale_for_size(width,height), r=28*k;
     float min_x=safe_left+r+8*k, max_x=width-safe_right-r-8*k;
     float min_y=safe_top+r+8*k, max_y=height-safe_bottom-r-8*k;
-    float want_x=tc.layout.target[DM_TC_MAIN].x-170*k;
-    float want_y=tc.layout.target[DM_TC_MAIN].y-100*k;
+    float want_x=max_x-4*k, want_y=min_y+4*k;
     dm_tc_target best={fminf(max_x,fmaxf(min_x,want_x)),fminf(max_y,fmaxf(min_y,want_y)),r,0};
     float score=INFINITY;
-    /* A stable free circle above/left of the skill fan. Java draws these exact
-     * coordinates; no separate UI hit target can drift away from the graphic. */
+    /* Prefer the safe top-right corner independently of combat margins.
+     * Java draws these exact coordinates and the same circle is hit-tested. */
     for(int yi=0;yi<15;++yi) for(int xi=0;xi<9;++xi) {
-        float x=fminf(max_x,fmaxf(min_x,want_x+(xi-4)*32*k));
-        float y=fminf(max_y,fmaxf(min_y,want_y+(yi-7)*28*k));
+        float x=fminf(max_x,fmaxf(fmaxf(min_x,width*.65f),want_x-xi*28*k));
+        float y=fminf(fminf(max_y,height*.35f),fmaxf(min_y,want_y+yi*28*k));
         float d=hypotf(x-want_x,y-want_y);
         if(d<score && aim_feedback_circle_clear(x,y,r,k)) { best.x=x; best.y=y; score=d; }
     }

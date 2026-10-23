@@ -878,7 +878,7 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
         REQUIRE(map_position_calls==1 && loot_filter_requests==1);
         dm_tc_target first=quick_circle(1), second=quick_circle(2);
         REQUIRE(fabsf(first.y-second.y)<.001f);
-        REQUIRE(fabsf(second.x-first.x-56*dm_tc_scale_for_size(width,height))<.001f);
+        REQUIRE(fabsf(second.x-first.x-60*dm_tc_scale_for_size(width,height))<.001f);
         REQUIRE(first.y+first.r<tc.layout.target[DM_TC_PORTAL].y-tc.layout.target[DM_TC_PORTAL].r);
         /* Default 48dp monitor offset leaves room for a 44dp phone target in
            the top strip. Tablet scaling falls back beside the panel. */
