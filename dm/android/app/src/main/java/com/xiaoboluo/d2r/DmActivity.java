@@ -65,6 +65,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private FrameLayout gameFrame;
     private TouchOverlay touchOverlay;
     private PerformanceOverlay performanceOverlay;
+    private RiftInfoOverlay riftInfoOverlay;
+    private MapGoalOverlay mapGoalOverlay;
     private boolean legacyTouchSettingsSeeded;
     private boolean monitoringEnabled;
     private boolean started;
@@ -342,6 +344,11 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
                     android.view.Gravity.TOP | android.view.Gravity.LEFT));
         }
         if (touchOverlay == null) {
+            mapGoalOverlay=new MapGoalOverlay(this);
+            riftInfoOverlay=new RiftInfoOverlay(this);
+            gameFrame.addView(mapGoalOverlay,new FrameLayout.LayoutParams(-1,-1));
+            gameFrame.addView(riftInfoOverlay,new FrameLayout.LayoutParams(-1,-1));
+            riftInfoOverlay.setBoundsListener(mapGoalOverlay::setInfoBounds);
             int[] gameIds = {R.string.dmAndroidAttack, R.string.dmAndroidSkill1, R.string.dmAndroidSkill2, R.string.dmAndroidSkill3, R.string.dmAndroidSkill4,
                 R.string.dmAndroidPortal, R.string.dmAndroidPotion1, R.string.dmAndroidPotion2, R.string.dmAndroidPotion3, R.string.dmAndroidPotion4,
                 R.string.dmAndroidMenu, R.string.dmAndroidMap, R.string.dmAndroidMove, R.string.dmAndroidSwap, R.string.dmAndroidDifficulty};
@@ -350,13 +357,23 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             for (int i = 0; i < gameIds.length; i++) gameLabels[i] = getString(gameIds[i]);
             for (int i = 0; i < navIds.length; i++) navLabels[i] = getString(navIds[i]);
             touchOverlay = new TouchOverlay(this, gameLabels, navLabels);
-            performanceOverlay.setBoundsListener(touchOverlay::setMonitorBounds);
+            performanceOverlay.setBoundsListener((l,t,r,b) -> {
+                touchOverlay.setMonitorBounds(l,t,r,b);
+                riftInfoOverlay.setMonitorBounds(l,t,r,b);
+                mapGoalOverlay.setMonitorBounds(l,t,r,b);
+            });
+            touchOverlay.setLayoutListener(values -> {
+                riftInfoOverlay.setControlLayout(values);
+                mapGoalOverlay.setControlLayout(values);
+            });
             touchOverlay.setSettingsListener((left, right, monitor) -> applyMonitoringSetting(monitor));
             touchOverlay.setMonitorStyleListener(performanceOverlay::setStyle);
             touchOverlay.setOnApplyWindowInsetsListener((v, insets) -> {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.displayCutout());
                 touchOverlay.setSafeInsets(safe.left, safe.top, safe.right, safe.bottom);
                 performanceOverlay.setSafeInsets(safe.left, safe.top, safe.right, safe.bottom);
+                riftInfoOverlay.setSafeInsets(safe.left,safe.top,safe.right,safe.bottom);
+                mapGoalOverlay.setSafeInsets(safe.left,safe.top,safe.right,safe.bottom);
                 return insets;
             });
             gameFrame.addView(touchOverlay, new FrameLayout.LayoutParams(-1, -1));
@@ -405,10 +422,13 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         started = true;
         touchOverlay.setInputEnabled(true);
         nativeFocus(3);
+        updateInfoOverlays();
         applyMonitoringSetting(monitoringEnabled);
     }
 
     private void showStartError(String message) {
+        if (riftInfoOverlay!=null) riftInfoOverlay.setRuntimeEnabled(false);
+        if (mapGoalOverlay!=null) mapGoalOverlay.setRuntimeEnabled(false);
         TextView t = new TextView(this);
         t.setText(message); t.setTextSize(20); t.setPadding(64, 64, 64, 64);
         setContentView(t);
@@ -524,14 +544,20 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private void updateRefresh() {
         if (libraryLoaded) nativeRefresh(view.getDisplay() == null ? 0 : view.getDisplay().getRefreshRate());
     }
+    private void updateInfoOverlays() {
+        boolean active=started && resumed && libraryLoaded && bootFailure==0
+                && view.getHolder().getSurface().isValid();
+        if (riftInfoOverlay!=null) riftInfoOverlay.setRuntimeEnabled(active);
+        if (mapGoalOverlay!=null) mapGoalOverlay.setRuntimeEnabled(active);
+    }
     @Override public void onDisplayAdded(int id) { updateRefresh(); }
     @Override public void onDisplayRemoved(int id) { updateRefresh(); }
     @Override public void onDisplayChanged(int id) { updateRefresh(); }
-    @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && bootFailure == 0 && monitoringEnabled); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } }
-    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && bootFailure == 0 && monitoringEnabled); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } updateInfoOverlays(); }
+    @Override protected void onPause() { resumed = false; updateInfoOverlays(); if (inputDialog != null) inputDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
     @Override protected void onStart() { super.onStart(); if (started) nativeFocus(2); }
     @Override protected void onStop() { if (started) nativeFocus(1); com.xiaoboluo.d2r.widget.HeroWidgetProvider.requestUpdate(this); super.onStop(); }
-    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
+    @Override protected void onDestroy() { resumed=false; updateInfoOverlays(); if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); else releaseTouches(); }
 
     @Override public void surfaceCreated(SurfaceHolder h) {}
@@ -539,7 +565,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         if (libraryLoaded) nativeSurface(h.getSurface(), w, ht);
         updateRefresh();
         startHost();
+        updateInfoOverlays();
     }
-    @Override public void surfaceDestroyed(SurfaceHolder h) { releaseTouches(); if (libraryLoaded) nativeSurface(null, 0, 0); }
+    @Override public void surfaceDestroyed(SurfaceHolder h) { releaseTouches(); if (riftInfoOverlay!=null) riftInfoOverlay.setRuntimeEnabled(false); if (mapGoalOverlay!=null) mapGoalOverlay.setRuntimeEnabled(false); if (libraryLoaded) nativeSurface(null, 0, 0); }
 
 }

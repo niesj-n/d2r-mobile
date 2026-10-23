@@ -1,4 +1,6 @@
 #include "touch_android.h"
+#include "rift_info_android.h"
+#include "map_goal_android.h"
 #include "../ios/Sources/dm_touch_controls.h"
 #include "../host/dm_input.h"
 #include "../host/dm_cursor.h"
@@ -158,7 +160,15 @@ static void init_locked(void) {
     ready = 1;
     labels_ready_at = 0; labels_done = 0;
 }
+/* Lifecycle callers may run on the UI thread: revocation never reads guest state.
+ * The server publishes Rift values under its own lock, never this touch lock. */
+static void clear_info_locked(void) {
+    dm_android_rift_info_set_active(0);
+    dm_android_rift_info_set_minimap(NULL);
+    dm_android_map_goal_publish(0);
+}
 static void cancel_locked(void) {
+    clear_info_locked();
     aim_feedback_reset();
     dm_tc_cancel_all(&tc);
     dm_product_ui_touch(3);
@@ -239,6 +249,7 @@ int dm_android_touch_sort_context(void) {
 }
 void dm_android_touch_cancel_pending(void) {
     pthread_mutex_lock(&lock);
+    clear_info_locked();
     cancel = 1; head = tail = 0;
     action_head = action_tail = 0; action_release = 0;
     dm_inv_sort_touch_cancel();
@@ -252,6 +263,7 @@ int dm_android_touch_gameplay(void) {
 }
 void dm_android_touch_focus(int active) {
     pthread_mutex_lock(&lock);
+    if (!active) clear_info_locked();
     focused = !!active; cancel = 1; head = tail = 0; dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
@@ -642,6 +654,13 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         const char *defaults = getenv("DM_TOUCH_DEFAULTS");
         if (!defaults || strcmp(defaults,"0")) { *buttons |= DM_BTN_L; action_release = 1; labels_done = 1; }
     }
+    /* Guest sampling owns map/locale reads. Rift plain fields are sampled only
+     * by the server hook; this path publishes an activity gate and atomic map
+     * bounds, keeping all JNI reads independent from guest memory. */
+    dm_android_rift_info_set_active(gameplay);
+    float mini[4], cell;
+    dm_android_rift_info_set_minimap(gameplay && dm_ui_map_geom(&cell)==1 && dm_ui_minimap_rect(mini) ? mini : NULL);
+    dm_android_map_goal_publish(gameplay);
     if (!*lx && !*ly) { *lx = tc.lx; *ly = tc.ly; }
     if (!*rx && !*ry) { *rx = tc.rx; *ry = tc.ry; }
     pthread_mutex_unlock(&lock);

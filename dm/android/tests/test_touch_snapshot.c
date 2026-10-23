@@ -50,6 +50,11 @@ void dm_product_ui_touch(int phase) { if (phase==0) ++product_down_calls; else i
 static unsigned panel_calls;
 static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_calls, map_position_calls;
 static int map_absolute=-1, map_toggles_pending;
+static int info_rift_active, info_map_active, info_rift_calls, info_map_calls, info_minimap;
+static int info_have_minimap;
+void dm_android_rift_info_set_active(int active) { info_rift_active=!!active; ++info_rift_calls; }
+void dm_android_rift_info_set_minimap(const float r[4]) { info_minimap=r!=NULL; }
+void dm_android_map_goal_publish(int active) { info_map_active=!!active; ++info_map_calls; }
 static int loot_filter_requests;
 void dm_custom_android_request_loot_filter_toggle(void) { ++loot_filter_requests; }
 static int observed_idle, observed_swap_above, allow_synthetic_touch, synthetic_touch_calls;
@@ -108,7 +113,7 @@ dm_ta_glyph dm_ta_skill(uint32_t id) { (void)id; return (dm_ta_glyph){.status=DM
 dm_ta_glyph dm_ta_current_set(const dm_tg_snapshot *s,uint64_t key,uint64_t now,int set) { (void)s; (void)key; (void)now; (void)set; return dm_ta_skill(0); }
 int dm_ta_frame_at(int atlas,int frame,dm_ta_frame *out) { (void)atlas; (void)frame; (void)out; return 0; }
 int dm_swapskill_slot(int slot,int *charges) { (void)slot; *charges=0; return 0; }
-int dm_ui_minimap_rect(float r[4]) { (void)r; return 0; }
+int dm_ui_minimap_rect(float r[4]) { if (!info_have_minimap) return 0; r[0]=.6f; r[1]=-.02f; r[2]=.95f; r[3]=.3f; return 1; }
 int dm_ui_map_is_full(void) { return map_full; }
 void dm_ui_map_full(int on) { map_absolute=on; ++map_full_calls; }
 void dm_ui_map_toggle(void) { ++map_toggles_pending; ++map_toggle_calls; }
@@ -182,6 +187,7 @@ void dm_uiscreen_set_panel(int panel) {
 }
 int dm_uiscreen_ingame(void) { return observed_ingame; }
 static void fixture(int navigation) {
+    info_rift_active=info_map_active=info_rift_calls=info_map_calls=info_minimap=info_have_minimap=0;
     allow_empty_binding_hit=0;
     dm_android_touch_obstructions(0,0,0,0,0);
     memset(&tc, 0, sizeof tc);
@@ -1068,6 +1074,23 @@ static void test_panel_parking_mode_and_cancel_boundaries(void) {
     REQUIRE(cursor_calls==1 && fabsf(cursor_x-1024*.02f)<.001f && cursor_y==384);
 }
 
+static void test_info_publication_lifecycle(void) {
+    fixture(0); scene.game=1; labels_done=1; info_have_minimap=1;
+    queue_sample();
+    REQUIRE(info_rift_active && info_map_active && info_minimap);
+    REQUIRE(info_rift_calls>0 && info_map_calls>0);
+    map_mode=2; queue_sample(); REQUIRE(!info_minimap && info_map_active && info_rift_active);
+    dm_android_touch_cancel_pending();
+    REQUIRE(!info_rift_active && !info_map_active && !info_minimap);
+    queue_sample(); REQUIRE(info_rift_active && info_map_active);
+    dm_android_touch_focus(0); REQUIRE(!info_rift_active && !info_map_active);
+    queue_sample(); REQUIRE(!info_rift_active && !info_map_active);
+    dm_android_touch_focus(1); queue_sample(); REQUIRE(info_rift_active && info_map_active);
+    dm_tc_set_navigation_mode(&tc,1); queue_sample(); REQUIRE(!info_rift_active && !info_map_active);
+    dm_tc_set_navigation_mode(&tc,0); scene.game=0; queue_sample();
+    REQUIRE(!info_rift_active && !info_map_active);
+}
+
 int main(void) {
     puts("SCOPE native_layout_and_input_bridge; no_Java_Canvas_no_guest_no_save_access");
     run_case("zero_margin_keeps_original_layout", test_zero_margin_keeps_original_layout);
@@ -1111,6 +1134,7 @@ int main(void) {
     run_case("panel_drop_tooltip_and_sort_down_boundary", test_panel_drop_tooltip_and_sort_down_boundary);
     run_case("panel_parking_gates", test_panel_parking_gates);
     run_case("panel_parking_mode_and_cancel_boundaries", test_panel_parking_mode_and_cancel_boundaries);
+    run_case("info_publication_lifecycle", test_info_publication_lifecycle);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }

@@ -51,12 +51,19 @@ public final class TouchOverlay extends View {
     // Coordinates, visibility, pressed state and skill set all participate in that snapshot.
     private final float[] probe = new float[DRAW_FLOATS], drawn = new float[DRAW_FLOATS];
     private boolean drawnValid;
+    private final float[] publishedLayout=new float[DRAW_FLOATS];
+    private boolean layoutPublished;
     private final Choreographer.FrameCallback poll = new Choreographer.FrameCallback() {
         @Override public void doFrame(long frameTimeNanos) {
             if (!running) return;
             if (inputEnabled && isShown()) {
                 syncAppliedSettings();
                 nativeLayout(probe);
+                if (layoutListener!=null && (!layoutPublished || !Arrays.equals(probe,publishedLayout))) {
+                    System.arraycopy(probe,0,publishedLayout,0,DRAW_FLOATS);
+                    layoutPublished=true;
+                    layoutListener.changed(publishedLayout);
+                }
                 if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
             }
             Choreographer.getInstance().postFrameCallback(this);
@@ -82,12 +89,20 @@ public final class TouchOverlay extends View {
     private int marginLeft, marginRight;
     public interface SettingsListener { void changed(int left, int right, boolean monitor); }
     public interface MonitorStyleListener { void changed(int fontSize, int transparency); }
+    /** Read-only existing drawing snapshot in dp; recipients copy it, never mutate it. */
+    public interface LayoutListener { void changed(float[] values); }
     private SettingsListener settingsListener;
     private MonitorStyleListener monitorStyleListener;
+    private LayoutListener layoutListener;
     private boolean running, inputEnabled;
 
     public static void seedLegacySettings(int left, int right, boolean monitor) {
         nativeSeedLegacySettings(left, right, monitor);
+    }
+
+    public void setLayoutListener(LayoutListener listener) {
+        layoutListener=listener;
+        if (listener!=null) listener.changed(inputEnabled && layoutPublished ? publishedLayout : null);
     }
 
     public void setSettingsListener(SettingsListener listener) {
@@ -167,6 +182,8 @@ public final class TouchOverlay extends View {
         if (inputEnabled==enabled) return;
         if (!enabled) cancelTouches();
         inputEnabled=enabled;
+        layoutPublished=false;
+        if (!enabled && layoutListener!=null) layoutListener.changed(null);
         drawnValid=false; invalidate();
         if (enabled) {
             images.clear(); art.clear(); glyphs.clear(); glowOffsets.clear();
