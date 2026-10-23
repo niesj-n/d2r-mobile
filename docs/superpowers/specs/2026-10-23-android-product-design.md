@@ -1,0 +1,17 @@
+# Android product design — approved continuation (2026-10-23)
+
+## Authority and source
+The user's approved handoff is G:/d2r/artifacts/d2r-original-fork-task-handoff-20261023.md. This document records those decisions; it does not reopen them. The only upstream is jhaizhou-ops/d2r-mobile, pinned at e3756f8942b40eba6c851e881828a5b1bda17fd6. Integration branch: work/android-fixed-render-touch in G:/d2r/original-fork. Preserve existing private work and original installed application/data. Never send QQ/chat messages, simulate taps, skip required draws, merge the old runtime wholesale, or publish private game material.
+
+## Product boundaries
+1. Build an unchanged native-source baseline APK, signed with a persistent local test identity and an alternate application ID. Prepare matching private import content from verified local 3.3.94012 input. Record source, toolchain, package and signing hashes, product/overlay identities, and APK/ELF 16 KB alignment. APK success is distinct from playable-device acceptance.
+2. Android fixed scale settings retain existing output dimensions and UI resolution. Expose fixed .50/.60/.70/.75/.80/.85/.90/1.00/1.25 choices, default .85; persist selection and restore default. 1.25 multiplies each 3D target dimension relative to output. Disable frame-time and GPU/thermal dynamic lowering in the Android product, including environment override paths. Other platforms retain their behavior. Validate real target dimensions through existing logs; do not claim 1.25 works on GPU from a unit test.
+3. Add independently persistent left and right button edge margins, default zero additional margin, practical bounded controls and reset. Keep system safe areas. Apply placement through the shared native layout used by drawing and hit testing, scoped to Android, and clamp small screens to valid nonoverlapping control regions. Cancel active touches before relayout. Existing touch size remains unchanged.
+4. Diagnose black blocks only after identifying the installed APK/runtime/shaders/driver and recording a stable scene. Collect resource/layout/barrier/lifetime evidence; apply one bounded fix with before/after comparison only when a causal reproduction exists.
+5. Optimize measured long frames without dropped draws or quality reduction. Use existing pipeline/upload/cache instrumentation first. Prioritize real frequent-use touch/lifecycle gaps from current code after the first deliverable; each further feature gets a narrow plan and regression evidence.
+
+## Validation and acceptance
+For each code feature: meaningful failing regression first, minimal implementation, passing focused tests, independent SPEC review followed by a different fresh QUALITY reviewer, then integration build/lint. Use host tests to check policy and geometry; use Android build to check actual integration. Device checks are manual user operation with read-only adb capture where authorized/available: import, create hero, enter world, move/fight, audio, save/relaunch, background/resume, dimensions, frame times, temperatures. Missing hardware interaction must remain pending rather than invented.
+
+## Alternatives already resolved
+Use original native host instead of maintaining a parallel runtime; use fixed 1.25 scale instead of forced 1920x1080 output; use independent margins instead of a shared edge slider. These choices are already authorized. No new architecture is required.
