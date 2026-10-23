@@ -29,3 +29,16 @@ static inline double nvn_pace_hz(double screen_hz, double floor_hz) {
     if (screen_hz <= 0 || floor_hz <= 0) return floor_hz;
     double k = (double)(long)(screen_hz / floor_hz + 0.02); return k >= 1 ? screen_hz / k : screen_hz;
 }
+
+// Android's selected FPS is a ceiling. Choose a display divisor at or below it,
+// preserving the legacy floor policy above for Apple/HarmonyOS callers.
+static inline double nvn_pace_capped_hz(double screen_hz, double target_hz) {
+    if (!(target_hz > 0 && target_hz <= 240)) target_hz = 60;
+    if (!(screen_hz > 0 && screen_hz <= 1000)) return target_hz;
+    double ratio = screen_hz / target_hz;
+    long divisor = (long)ratio;
+    if (ratio - divisor > 0.02) ++divisor;
+    if (divisor < 1) divisor = 1;
+    double hz = screen_hz / divisor;
+    return hz > target_hz ? target_hz : hz;
+}

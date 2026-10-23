@@ -22,8 +22,8 @@ Stack: C/C++, Java 17, Python 3.12, Android SDK 36, NDK 29.0.14206865, CMake 3.3
 
 ## Task 2 — Fixed scale settings
 - [ ] Inspect actual settings persistence/UI path and controller including GPU override.
-- [ ] Add host regression cases for 1.25 acceptance, invalid/NaN rejection, fixed under sustained slow/GPU/thermal inputs, default/reset and persistence; run to expected failure.
-- [ ] Implement the design's fixed choices in existing settings flow; Android guards retain other platforms. Reuse renderer rebuild and dimensions log. Ensure UI/Final Result/output dimensions do not change.
+- [ ] Add host regression cases for 1.25 acceptance, invalid/NaN rejection, fixed when dynamic is off, GPU-budget response when on at 30/60 FPS, CPU-bound preservation, default/reset and persistence; run to expected failure.
+- [ ] Implement scale and 30/60 FPS left/right arrow rows plus an independent dynamic-resolution switch in the existing settings flow; Android guards retain other platforms. Reuse renderer rebuild and dimensions log. Ensure UI/Final Result/output dimensions do not change.
 - [ ] Run focused host tests and source compilation; record red/green commands, commit, request SPEC then fresh QUALITY. Resolve all actionable findings before integration.
 
 ## Task 3 — Left/right margins
@@ -39,3 +39,10 @@ Stack: C/C++, Java 17, Python 3.12, Android SDK 36, NDK 29.0.14206865, CMake 3.3
 - [ ] If reproducible black block evidence exists, isolate one causal resource/sync hypothesis and add a regression before bounded fix; otherwise retain an explicit evidence gap.
 - [ ] Rank measured long-frame sources using existing instrumentation; fix only demonstrated costs and compare same scene/settings/cache/thermal conditions.
 - [ ] Audit current unimplemented touch/lifecycle frequent-use features and write a narrow follow-on plan for the next complete feature family. Continue authorized independent work while awaiting manual device steps.
+
+## User revisions accepted during execution
+- Keep an explicit 1.00 scale alongside 1.25; use arrows rather than checkbox scale choices.
+- Dynamic resolution is now allowed only through an explicit switch (default off), targeting selected 30/60 FPS. This supersedes the initial unconditional ban on dynamic lowering.
+- Root owns nvn_pace.h, hle_nvn.c and nvn_vk.c for actual target presentation pacing. Production-function host regressions must show target30 no longer pacing60, unknown-refresh fallback, no over-target tier, invalid refresh handling, stale environment immunity and unchanged legacy policy.
+- APK/import first; user performs manual phone acceptance later. Existing original app/game files are already on the phone, so reuse its data directory and provide a separate fork import directory.
+- Run/Walk, map show/hide, full/minimap and recenter are explicit Android actions; respect the saved map setting. Narrow implementation plan is 2026-10-23-android-operation-completeness.md.

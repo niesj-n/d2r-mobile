@@ -88,7 +88,13 @@ int mtl_has_window(void){return g_config.has_window?g_config.has_window(g_config
 double front_display_refresh(char *name, size_t n);
 double mtl_display_refresh(void) { double hz = front_display_refresh(NULL, 0); return hz > 0 ? hz : g_config.display_hz; }
 int mtl_display_hz(void) { return (int)(mtl_display_refresh() + 0.5); }
-double dm_pace_hz(double screen_hz, double floor_hz) { return nvn_pace_hz(screen_hz, floor_hz); }
+double dm_pace_hz(double screen_hz, double floor_hz) {
+#if defined(__ANDROID__)
+    return nvn_pace_capped_hz(screen_hz, floor_hz);
+#else
+    return nvn_pace_hz(screen_hz, floor_hz);
+#endif
+}
 __attribute__((weak)) int dm_fps_setting(void){return 60;}
 int mtl_fps_target(void){return dm_fps_setting()==30?30:60;}
 int mtl_link_active(void){return 0;}

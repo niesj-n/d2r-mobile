@@ -1378,14 +1378,28 @@ static void sleep_until_ns(uint64_t dl) {   // 单调时钟上的绝对时刻 | 
 // 4181 SaveIndicatorPanel entries and capped at 60 fps gives 0, which matches the ground truth), so uncapped is a semantically wrong way to run and must not be used as a criterion / cross-check / default. Unit tests set it directly with nvn_present_config
 static _Atomic int g_pa = -1; static int g_pa_k; static double g_pa_ema, g_pa_screen_hz; static unsigned g_pa_up; static uint64_t g_pa_last;
 static int pace_adapt_enabled(void) {
+#if defined(__ANDROID__)
+    return 0; // Android changes resolution, never the user's selected FPS target.
+#endif
     if (g_pa < 0) { const char *e = getenv("DM_PACE_ADAPT"); g_pa = e && *e == '1'; }
     return g_pa;
 }
 static double present_auto_hz(double screen_hz) {
+#if defined(__ANDROID__)
+    int mtl_fps_target(void);
+    int target = mtl_fps_target(); double effective = dm_pace_hz(screen_hz, target);
+    static int last_target; static double last_effective;
+    if (target != last_target || effective > last_effective + .05 || effective < last_effective - .05) {
+        LOG("[nvn] Android FPS target=%d effective=%.2f screen=%.2f", target, effective, screen_hz);
+        last_target = target; last_effective = effective;
+    }
+    return effective;
+#else
     // 自适应目标是最高60，而旧Apple策略是至少60；两者不共用取整方向。首帧/刷新率改变也受上限约束。
     // Adaptive pacing caps at 60; the legacy Apple policy has a floor of 60. Cap the first frame and refresh changes too.
     if (pace_adapt_enabled() && screen_hz > 0) return screen_hz / nvn_adaptive_divisor(screen_hz, g_pa_k, g_pa_screen_hz);
     return dm_pace_hz(screen_hz, 60);
+#endif
 }
 static int g_hz = -1, g_display_mode, g_hz_auto;   // g_hz_auto：有窗口、没用 DM_PRESENT_HZ 钉住——帧率跟着窗口所在屏的刷新率取整除档（每帧重读，换屏即换） | g_hz_auto: has a window and not pinned by DM_PRESENT_HZ; the frame rate takes the evenly dividing tier of the refresh rate of the screen the window is on (re-read every frame, changes with the screen)
 void nvn_present_config(int hz, int display_mode) { g_hz = hz; g_display_mode = display_mode; g_hz_auto = 0; }
@@ -1395,7 +1409,12 @@ static void present_cfg(const win_t *o) {
     // 有窗口仍缺省 display 间隔模式；无窗口缺省 game 模式。环境变量可覆盖固定 60 Hz。
     // With a window the default is still display interval mode; without a window the default is game mode. Environment variables can override the fixed 60 Hz.
     int scr = mtl_display_hz();
+#if defined(__ANDROID__)
+    const char *e = NULL; g_hz = 60; g_hz_auto = 1;
+    if (getenv("DM_PRESENT_HZ")) LOG("[nvn] Android uses the selected 30/60 FPS setting; DM_PRESENT_HZ ignored");
+#else
     const char *e = getenv("DM_PRESENT_HZ"); g_hz = e ? atoi(e) : 60; g_hz_auto = !e && scr > 0;
+#endif
     if (!g_hz) LOG("[nvn] 【警告】DM_PRESENT_HZ=0：不限帧率，帧节奏非真机，界面逻辑可能偏离（仅供性能剖析，不能用于判据 / 对拍）");
     // 剪口（有意偏离原版行为）：DM_PRESENT_INTERVAL=display 时不按游戏设的出图间隔，每个节拍出一帧，
     // 固定 60 帧硬底；逻辑 25 拍不变，且客户端按帧计数的界面逻辑不受影响——
