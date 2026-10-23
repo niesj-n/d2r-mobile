@@ -1,0 +1,11 @@
+# Android skill drag and utility controls
+
+The user approved hold-to-aim, release-to-cast for directional skills, a visible drag/cancel affordance, and unchanged held primary attack. They requested another pass on the map-position and loot-filter layout after observing the v2.5.1 phone build. System-driver BC experiments are paused; third-party driver support remains the graphics workaround.
+
+The utility pair will form a small aligned row above the existing skill group, with dark original sockets, silver map-position/filter symbols and readable full captions. Both have the same size and spacing. They stay attached to the right-control margins, retain native hit ownership and never emit skill keys. The bare upper-left map visibility control remains as delivered.
+
+Dragging a gameplay skill will show a bounded displaced thumb and an oriented rim/arrow while leaving the original socket visible. A separate dark-red cancel target appears only while a skill gesture is active. Finger motion into that target suppresses the eventual cast, and release/cancel removes all temporary feedback. Ordinary primary attack keeps its continuous behavior. Empty slots retain rebinding, navigation keeps native UI gestures, second-set modifier lead and pulse consumption remain correct.
+
+Skill timing must be driven by native gesture ownership, with an appended drawing snapshot read under the existing lock. Java must not infer a cast solely from local touches or claim game targeting/range previews. Original imported skill art remains unrotated; the direction rim rotates so skill identity stays recognizable. Binding classification must use verified source/game data; unknown or channel behavior must not be guessed from icon availability.
+
+Checks cover hold versus release, one cast pulse, cancel before release, quick taps batched into one sampling tick, second skill set, simultaneous movement, scene/focus/resize cancellation, prefix ABI preservation, and utility draw/hit clearance across real phone sizes and both swap placements. Build a signed ordinary APK, verify identity/signature/16KB alignment, deliver under outputs, and ask save/exit readiness before wireless replacement. Phone feel and actual cast outcomes require manual verification.
