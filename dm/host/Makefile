@@ -43,6 +43,7 @@ SRC=\
 	dm_bright.c \
 	dm_cloudsync.c \
 	dm_cursor.c \
+	dm_product_ui.c \
 	dm_cursor_item.c \
 	dm_custom.c \
 	dm_dropfilter.c \

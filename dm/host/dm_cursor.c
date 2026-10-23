@@ -8,6 +8,9 @@
 #include "dm_actions.h"
 #include "dm_cursor_item.h"
 #include "dm_i18n.h"
+#ifdef __ANDROID__
+#include "dm_product_ui.h"
+#endif
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -516,7 +519,11 @@ int dm_fe_bliss(void) { return atomic_load(&g_fe_bliss); }
 // Delete-character popup: the original game requires 'long-press 「是」(Yes)', and the long-press is measured by how long controller A is held (holding the mouse for 4 seconds only produces one Confirm on release and does not delete). Hold A while the finger is pressed on 「是」(Yes), and release it when the finger lifts
 static _Atomic int g_fe_del_open, g_del_q, g_del_hold;   // 模式页 / 确认框开着；模式页上点了牌子以外 → 返回 | Mode page / confirmation box open; on the mode page a tap landed outside the plaques -> back
 int dm_restart_busy(void);   // 一键重开进行中（定义在下面）：界面触点一律丢掉 | One-key restart in progress (defined below): all UI touch points are dropped
-void dm_ui_touch(int phase, float nx, float ny) { if (phase != 3 && dm_restart_busy()) return;   // phase：0 按下 1 移动 2 抬起 3 作废（按下后改成了滚动：这次不点）；nx / ny = 出图画面归一化坐标 [0,1] | phase: 0 down, 1 move, 2 up, 3 cancelled (turned into a scroll after the press: no click this time); nx / ny = coordinates normalized to the rendered picture [0,1]
+void dm_ui_touch(int phase, float nx, float ny) {
+#ifdef __ANDROID__
+    if(phase==3) dm_product_ui_touch(3);
+#endif
+    if (phase != 3 && dm_restart_busy()) return;   // phase：0 按下 1 移动 2 抬起 3 作废（按下后改成了滚动：这次不点）；nx / ny = 出图画面归一化坐标 [0,1] | phase: 0 down, 1 move, 2 up, 3 cancelled (turned into a scroll after the press: no click this time); nx / ny = coordinates normalized to the rendered picture [0,1]
     if (phase == 3) { atomic_store(&g_ut_phase, 0); atomic_store(&g_del_q, 0); atomic_store(&g_del_hold, 0); return; }
     if (phase != 1) DM_LAT("ui_touch %d", phase);
     nx = nx < 0 ? 0 : nx > 1 ? 1 : nx; ny = ny < 0 ? 0 : ny > 1 ? 1 : ny;
@@ -1836,7 +1843,11 @@ static uint64_t g_mv_audit_at; static const char *g_mv_audit_path = "";
 static void mv_audit_arm(const char *path) {   // 前一条还没到点就合并路名：切后台时客体时钟冻结，自检要到回前台后才跑，原先被「回前台」覆盖、整局没有「切后台」那行 | If the previous one has not come due yet, merge the path names: on going to background the guest clock freezes and the self-check only runs after returning to foreground; it used to be overwritten by 「回前台」(back to foreground), so the whole run had no 「切后台」(to background) line
     static char both[96]; if (g_mv_audit_at && strcmp(g_mv_audit_path, path)) { snprintf(both, sizeof both, "%s → %s", g_mv_audit_path, path); g_mv_audit_path = both; } else g_mv_audit_path = path;
     g_mv_audit_at = dm_guest_frame() + 12; }
-void dm_ui_lifecycle(int background) { mv_audit_arm(background ? "切后台" : "回前台"); }   // iOS 前端进 / 出后台时调（front_ios.m） | Called by the iOS front end on entering / leaving the background (front_ios.m)
+void dm_ui_lifecycle(int background) {
+#ifdef __ANDROID__
+    dm_product_ui_touch(3);
+#endif
+    mv_audit_arm(background ? "切后台" : "回前台"); }   // iOS 前端进 / 出后台时调（front_ios.m） | Called by the iOS front end on entering / leaving the background (front_ios.m)
 static void mv_audit_pump(uint64_t root, uint64_t fr) {
     if (!g_mv_audit_at || fr < g_mv_audit_at) return; g_mv_audit_at = 0; int bad = 0; char line[256]; int k = 0;
     for (int o = 0; o < MV_N; o++) { int live = 0; for (int i = 0; i < g_nmv; i++) live += g_mv[i].own == o && ui_has(root, g_mv[i].r.w, 0);
@@ -2419,6 +2430,22 @@ static void ui_map_geom_pump(module_t *m, uint64_t root) {
     uint32_t cb; memcpy(&cb, &cell, 4); atomic_store(&g_mapgeom, (uint64_t)mode << 32 | cb);
 }
 int dm_ui_map_geom(float *cell) { uint64_t v = atomic_load(&g_mapgeom); uint32_t cb = (uint32_t)v; memcpy(cell, &cb, 4); return (int)(v >> 32); }
+#ifdef __ANDROID__
+/* Sort uses the same real ButtonWidget mouse path as all panel buttons. Only
+ * availability and page-token validation are ours; hover/down/up and pressed
+ * artwork stay entirely with the game. */
+static void ui_product_pump(module_t *m,uint64_t root) {
+    int context=dm_uiscreen_ingame()?dm_ui_sort_context():-1;
+    dm_product_ui_scene(context,dm_ui_gen());
+    static const char *panels[]={"PlayerInventoryExpansionLayout","BankExpansionLayout"};
+    for(int i=0;i<2;i++) {
+        uint64_t panel=ui_panel(root,panels[i]),button=panel?ui_find(panel,"TouchProductSort",0):0;
+        if(!button || *(uint64_t *)button!=(uint64_t)m->base+0x20b7b00) continue;
+        int show=i?(context>=4 && context<=8):context==0;
+        *(uint8_t *)(button+0x50)=show;
+    }
+}
+#endif
 // 顶部首领血条的百分比（接在血条右边同一行，取整）。布局覆盖层把手柄版挂在目标头顶的血条挪到了顶部，并在条右边加了空字的 TouchBossPct
 // （dm/ios/tools/touch_layout.py _boss_bar_top）；这里每帧把进度条控件（HealthBarWidget，虚表 main+0x2089650）自己的比例 +0x154 写成「NN%」——
 // 与条同一个数（游戏已按整百分比截断：客户端生命 126/128 = 98.4% → 0.98），不另算。面板没开 / 控件不在（Mac 宿主跑原版布局）什么都不做。
@@ -2877,7 +2904,11 @@ void dm_ui_mouse_pump(void) {   // 游戏取手柄处调（hle_hid fill，主线
                 else fix = 0; }
             if (th) { ui_auto_key(th); tnext = fr + 8; } } } }
     { module_t *pm = main_module(); uint64_t proot = 0; if (pm) { memcpy(&proot, pm->base + 0x2f05458, 8); int32_t pw = *(int32_t *)(pm->base + 0x211da38), phh = *(int32_t *)(pm->base + 0x211da3c);
-        static uint64_t pf = UINT64_MAX; if (proot && pw > 0 && phh > 0 && pf != fr) { pf = fr; { static int dd; const char *dn; if (!dd && (dn = getenv("DM_UI_DUMP")) && atomic_load(&g_taps_base) && fr >= atomic_load(&g_taps_base) + (getenv("DM_UI_DUMP_AT") ? atoi(getenv("DM_UI_DUMP_AT")) : 45)) { dd = 1; ui_dump(proot, 0, dn, 0, pm); } } int tm = ui_touch_mode(); if (tm) ui_wtap_pump(pm, proot, pw, phh); if (tm) ui_long_pump(); ui_target_pump(pm, fr); if (tm) ui_use_pump(); if (tm) ui_buy_pump(pw, phh); ui_item_pump(proot, pw, phh); ui_ptr_pump(pm, proot, pw, phh); if (tm) ui_drag_pump(pm, proot, pw, phh); UI_MOUSE_ITEM_PUMPS(pm, proot, pw, phh); { int lu = atomic_load(&g_load_up); dm_uiscreen_set_ingame(ui_panel(proot, "HUDPanel") && !(lu < 0 ? ui_find(proot, "LoadScreenPanel", 0) != 0 : lu)); } ui_safe_pump(pm, proot, fr); ui_lift_pump(proot, fr); ui_note_dock_pump(proot); ui_trove_tabs_pump(pm, proot, fr); ui_minimap_pump(pm, proot, pw, phh, fr); ui_map_pump(pm); ui_map_geom_pump(pm, proot); ui_boss_pct_pump(pm, proot); ui_npcdlg_pump(proot); ui_map_center(pm, proot, *(volatile int32_t *)(pm->base + 0x2d5c748)); if (tm) ui_bind_pump(proot, fr); if (tm) swaptab_pump(proot); if (tm) ui_mercpg_pump(pm, proot, fr); ui_widestash_pump(proot); mv_audit_pump(proot, fr); ui_pages_pump(pm, proot); } } }
+        static uint64_t pf = UINT64_MAX; if (proot && pw > 0 && phh > 0 && pf != fr) { pf = fr; { static int dd; const char *dn; if (!dd && (dn = getenv("DM_UI_DUMP")) && atomic_load(&g_taps_base) && fr >= atomic_load(&g_taps_base) + (getenv("DM_UI_DUMP_AT") ? atoi(getenv("DM_UI_DUMP_AT")) : 45)) { dd = 1; ui_dump(proot, 0, dn, 0, pm); } } int tm = ui_touch_mode(); if (tm) ui_wtap_pump(pm, proot, pw, phh); if (tm) ui_long_pump(); ui_target_pump(pm, fr); if (tm) ui_use_pump(); if (tm) ui_buy_pump(pw, phh); ui_item_pump(proot, pw, phh); ui_ptr_pump(pm, proot, pw, phh); if (tm) ui_drag_pump(pm, proot, pw, phh); UI_MOUSE_ITEM_PUMPS(pm, proot, pw, phh); { int lu = atomic_load(&g_load_up); dm_uiscreen_set_ingame(ui_panel(proot, "HUDPanel") && !(lu < 0 ? ui_find(proot, "LoadScreenPanel", 0) != 0 : lu)); } ui_safe_pump(pm, proot, fr); ui_lift_pump(proot, fr); ui_note_dock_pump(proot); ui_trove_tabs_pump(pm, proot, fr); ui_minimap_pump(pm, proot, pw, phh, fr); ui_map_pump(pm); ui_map_geom_pump(pm, proot); ui_boss_pct_pump(pm, proot); ui_npcdlg_pump(proot); ui_map_center(pm, proot, *(volatile int32_t *)(pm->base + 0x2d5c748)); if (tm) ui_bind_pump(proot, fr); if (tm) swaptab_pump(proot); if (tm) ui_mercpg_pump(pm, proot, fr); ui_widestash_pump(proot); mv_audit_pump(proot, fr); ui_pages_pump(pm, proot);
+#ifdef __ANDROID__
+        ui_product_pump(pm, proot);
+#endif
+    } } }
     if (atomic_load(&g_fe_name_open) && atomic_load(&g_ut_phase) == 2) {   // 起名页：点输入框（底板 / 文本框）= 重新弹系统键盘，不发鼠标点击 | naming page: tapping the input box (backplate / text box) = pop up the system keyboard again, no mouse click is sent
         module_t *nm = main_module(); uint64_t nroot = 0; if (nm) memcpy(&nroot, nm->base + 0x2f05458, 8); uint64_t pn = nroot ? ui_find(nroot, "CharacterCreateNamePanel", 0) : 0;
         if (pn && nm) { int32_t w = *(int32_t *)(nm->base + 0x211da38), h = *(int32_t *)(nm->base + 0x211da3c); uint64_t v = atomic_load(&g_ut_xy);
@@ -3025,6 +3056,15 @@ static void sel_keep(const char *cat, const char *act) {
     LOG("选角：确认的是「%s」，原版重排后当前成了「%s」（被选者没排到第一行）→ 已按名字设回第 %lld 行", want, nm ? nm : "", (long long)at);
 }
 void dm_ui_on_uimsg(const char *cat, const char *act, const char *arg) {
+#ifdef __ANDROID__
+    if(cat && act && arg && !strcmp(cat,"PanelManager") && !strcmp(act,"ClosePanel") && !strcmp(arg,"TouchProductSort")) {
+        int context=dm_uiscreen_ingame()?dm_ui_sort_context():-1;
+        int token=dm_product_ui_sort(context,dm_ui_gen());
+        if(token>=0) dm_inv_sort_touch(token);
+    } else if(cat && act && !strcmp(cat,"PanelManager") && (!strcmp(act,"OpenPanel") || !strcmp(act,"ClosePanel") || !strcmp(act,"UnloadPanel") || !strcmp(act,"UnloadAll"))) {
+        dm_product_ui_touch(3);
+    }
+#endif
     sel_keep(cat, act);
     // 位置守卫自检的四条路：关面板 / 切页签 / 退出到前端（切后台由前端 dm_ui_lifecycle 报）
     // The four paths of the position guard self-check: closing a panel / switching tabs / exiting to the front end (going to the background is reported by the front end's dm_ui_lifecycle)
