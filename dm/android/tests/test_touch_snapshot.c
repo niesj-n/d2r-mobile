@@ -839,14 +839,13 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
         dm_tc_enable_targets(&tc,tc.enabled_targets & ~(1u<<DM_TC_MAP));
         float a[DM_ANDROID_TOUCH_DRAW_FLOATS], b[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(a);
         dm_tc_target old_main=tc.layout.target[DM_TC_MAIN];
-        float old_portal_y=tc.layout.target[DM_TC_PORTAL].y;
         dm_android_touch_margins(large_margin?96:0,large_margin?96:0); REQUIRE(queue_sample()==0); read_twice(b);
         float shift=tc.layout.target[DM_TC_MAIN].x-old_main.x;
         for (int i=0;i<3;++i) {
             int o=DM_ANDROID_TOUCH_QUICK+i*5; dm_tc_target q=quick_circle(i);
             if (i>0) {
-                float hud_lift=tc.layout.target[DM_TC_PORTAL].y-old_portal_y;
-                REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && fabsf(b[o+1]-a[o+1]-hud_lift)<.001f && b[o+2]==a[o+2]);
+                REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+2]==a[o+2]);
+                REQUIRE(q.y-q.r>=safe_top+4*dm_tc_scale_for_size(width,height)-.001f);
                 float k=dm_tc_scale_for_size(width,height);
                 REQUIRE(q.r==18*k && q.r<tc.layout.target[DM_TC_SKILL1].r);
                 REQUIRE(q.x>=tc.layout.target[DM_TC_MAIN].x-100*k);

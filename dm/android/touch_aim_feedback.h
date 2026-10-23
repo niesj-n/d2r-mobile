@@ -51,7 +51,7 @@ static dm_tc_target aim_feedback_circle_compute(void) {
     float min_x=safe_left+r+8*k, max_x=width-safe_right-r-8*k;
     float min_y=safe_top+r+8*k, max_y=height-safe_bottom-r-8*k;
     const dm_tc_target upper=tc.layout.target[DM_TC_SKILL3];
-    float want_x=upper.x-64*k, want_y=upper.y-68*k;
+    float want_x=upper.x-(tc.layout.swap_above?64:70)*k, want_y=upper.y-68*k;
     dm_tc_target best={fminf(max_x,fmaxf(min_x,want_x)),fminf(max_y,fmaxf(min_y,want_y)),r,0};
     float score=INFINITY;
     /* Stay close to the upper skill row. Its actual anchor already includes

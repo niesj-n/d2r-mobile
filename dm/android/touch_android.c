@@ -95,42 +95,23 @@ static void fe_event_locked(const touch_event *e) {
 
 static void avoid_bottom_hud_locked(void) {
     dm_tc_layout *l=&tc.layout;
-    float k=dm_tc_scale_for_size(l->width,l->height),u=l->height/1320.f,gap=8*k;
+    float k=dm_tc_scale_for_size(l->width,l->height),u=l->height/1320.f,gap=2*k;
     /* Same reference as imported hud_v4_ui/ui.json: base754..2016 around
-     * center1434, base top1134, vital text baseline1142. Include text/shadow. */
-    float left=l->width*.5f-680*u,right=l->width*.5f+582*u,top=1100*u;
-    float need=0,headroom=l->height;
+     * center1434, base top1134, vital baseline1142 and glyph top1116.
+     * Four reference pixels plus2dp leave a small shadow-safe clearance. */
+    float left=l->width*.5f-680*u,right=l->width*.5f+582*u,top=1112*u;
+    float need=0;
     for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
         dm_tc_target t=l->target[i];
         float visual=t.r+25*k; /* 18k thumb travel; 19k ring +6k arrow tip. */
-        if(t.x+visual+gap>left && t.x-visual-gap<right)
-            need=fmaxf(need,t.y+visual+gap-top);
+        float dx=fmaxf(0,fmaxf(left-t.x,t.x-right)),radius=visual+gap;
+        if(dx<radius)
+            need=fmaxf(need,t.y+sqrtf(radius*radius-dx*dx)-top);
     }
     if(need<=0) return;
-    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i)
-        headroom=fminf(headroom,l->target[i].y-l->target[i].r-safe_top-4*k);
-    headroom=fminf(headroom,l->swap.y-l->swap.r-safe_top-4*k);
-    for(int i=1;i<DM_ANDROID_TOUCH_QUICK_COUNT;++i) {
-        dm_tc_target t=quick_circle(i);
-        headroom=fminf(headroom,t.y-t.r-safe_top-4*k);
-    }
-    float lift=fminf(need,fmaxf(0,headroom));
-    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i) l->target[i].y-=lift;
-    l->swap.y-=lift;
-    /* Limited vertical room must not push the upper row off screen. Finish
-     * clearing only a lower button that still intersects the bottom HUD. */
-    for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
-        dm_tc_target *t=&l->target[i];
-        float visual=t->r+25*k;
-        if(t->x+visual+gap>left && t->x-visual-gap<right)
-            t->y=fminf(t->y,top-gap-visual);
-    }
-    /* On shorter landscape views, lifting the lowest skill can approach the
-     * next one. Separate that pair horizontally instead of overlapping it. */
-    dm_tc_target *lower=&l->target[DM_TC_SKILL1],upper=l->target[DM_TC_SKILL2];
-    float sep=lower->r+upper.r+gap,dy=lower->y-upper.y;
-    if(hypotf(lower->x-upper.x,dy)<sep && fabsf(dy)<sep)
-        lower->x=fminf(lower->x,upper.x-sqrtf(sep*sep-dy*dy)-.5f*k);
+    /* Rigid translation preserves every radius and adjacent fan interval. */
+    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i) l->target[i].y-=need;
+    l->swap.y-=need;
 }
 static void space_combat_controls_locked(void) {
     dm_tc_layout *l=&tc.layout;
@@ -139,12 +120,12 @@ static void space_combat_controls_locked(void) {
     /* Android's larger direction ring needs a little more room at the right
      * edge. Keep button sizes and all shared input travel/timing unchanged. */
     l->target[DM_TC_MAIN].x-=14*k;
-    l->target[DM_TC_MAIN].y-=6*k;
+    l->target[DM_TC_MAIN].y-=28*k;
     const dm_tc_target main=l->target[DM_TC_MAIN];
-    const float dx[4]={-110,-98,-44,36},dy[4]={22,-58,-112,-112};
     for(int i=0;i<4;++i) {
-        l->target[DM_TC_SKILL1+i].x=main.x+dx[i]*k;
-        l->target[DM_TC_SKILL1+i].y=main.y+dy[i]*k;
+        float angle=(-180.f+35.f*i)*(3.14159265358979323846f/180.f);
+        l->target[DM_TC_SKILL1+i].x=main.x+112*k*cosf(angle);
+        l->target[DM_TC_SKILL1+i].y=main.y+112*k*sinf(angle);
     }
     const dm_tc_target s4=l->target[DM_TC_SKILL4];
     l->target[DM_TC_PORTAL].x=s4.x;
@@ -384,14 +365,8 @@ static dm_tc_target quick_circle(int index) {
     const dm_tc_target *portal=&tc.layout.target[DM_TC_PORTAL];
     /* Auxiliary controls form a quiet, aligned row over the existing fan;
      * they no longer extend the combat arc toward the middle of the screen. */
-    float r=18*k, y=portal->y-70*k;
+    float r=18*k, y=fmaxf(safe_top+4*k+r,portal->y-70*k);
     float x=portal->x-(index==1 ? 120 : 60)*k;
-    if (y-r<safe_top+4*k) {
-        /* Compact tablet windows have no row above the portal. Keep both
-         * circles together to its left, clear of the original combat slots. */
-        y=fmaxf(safe_top+4*k+r,portal->y);
-        x=portal->x-(index==1 ? 124 : 64)*k;
-    }
     return (dm_tc_target){x,y,r,0};
 }
 static int quick_visible(void) {
