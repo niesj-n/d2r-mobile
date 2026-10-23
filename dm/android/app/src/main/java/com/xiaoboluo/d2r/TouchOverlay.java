@@ -24,7 +24,6 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import org.json.JSONObject;
@@ -32,15 +31,14 @@ import org.json.JSONArray;
 
 /** 透明悬浮触摸层：与游戏Surface同尺寸，不挤占游戏高度。 | Transparent overlay sharing the game Surface bounds without reducing its height. */
 public final class TouchOverlay extends View {
-    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3, ACTION_ITEM_NAMES=4, ACTION_SORT=5;
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
-    private static native void nativeAction(int action);
     private static native void nativeCancelPending();
-    private static native boolean nativeGameplay();
-    private static native int nativeSortContext();
     private static native void nativeLayout(float[] out);
+    private static native void nativeSeedLegacySettings(int left, int right, boolean monitor);
+    private static native boolean nativeReadSettings(int[] values);
+    private final int[] settingsProbe = new int[3], appliedSettings = {-1, -1, -1};
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final int GLYPHS=119, HUD=167, DRAW_FLOATS=185;
@@ -54,11 +52,10 @@ public final class TouchOverlay extends View {
         @Override public void doFrame(long frameTimeNanos) {
             if (!running) return;
             if (inputEnabled && isShown()) {
+                syncAppliedSettings();
                 nativeLayout(probe);
-                publishGameplay(nativeGameplay());
-                publishSortContext(nativeSortContext());
                 if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
-            } else { publishGameplay(false); publishSortContext(-1); }
+            }
             Choreographer.getInstance().postFrameCallback(this);
         }
     };
@@ -72,113 +69,31 @@ public final class TouchOverlay extends View {
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
     private final Bitmap[] skillAtlases=new Bitmap[9], silAtlases=new Bitmap[9];
     private Bitmap mapArt, circleArt, socketArt;
-    private final ArrayList<ToolbarButton> toolbarButtons = new ArrayList<>();
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final String lifeFormat, manaFormat, levelFormat, cancelLabel;
     private JSONObject hudUi;
     private float safeLeft, safeRight, safeBottom;
     private int marginLeft, marginRight;
-    public interface GameplayListener { void changed(boolean gameplay); }
-    public interface SortListener { void changed(int page); }
-    private GameplayListener gameplayListener;
-    private SortListener sortListener;
-    private int sortContext=-1;
-    private boolean running, inputEnabled, gameplay;
+    public interface SettingsListener { void changed(int left, int right, boolean monitor); }
+    private SettingsListener settingsListener;
+    private boolean running, inputEnabled;
 
-    public void setGameplayListener(GameplayListener listener) {
-        gameplayListener=listener;
-        if (listener!=null) listener.changed(gameplay);
-    }
-    private void publishGameplay(boolean value) {
-        if (gameplay==value) return;
-        gameplay=value;
-        if (gameplayListener!=null) gameplayListener.changed(value);
-    }
-    public void setSortListener(SortListener listener) {
-        sortListener=listener;
-        if (listener!=null) listener.changed(sortContext);
-    }
-    private void publishSortContext(int page) {
-        if (sortContext==page) return;
-        sortContext=page;
-        if (sortListener!=null) sortListener.changed(page);
-    }
-    public void sendGameplayAction(int action) {
-        if (inputEnabled && gameplay) nativeAction(action);
-    }
-    public void sendSortAction() {
-        if (inputEnabled && (sortContext==0 || (sortContext>=4 && sortContext<=8))) nativeAction(ACTION_SORT);
+    public static void seedLegacySettings(int left, int right, boolean monitor) {
+        nativeSeedLegacySettings(left, right, monitor);
     }
 
-    public ToolbarButton toolbarButton(int label, int description, boolean mapIcon, Runnable onClick) {
-        ToolbarButton button = new ToolbarButton(getContext(), getContext().getString(label), mapIcon);
-        button.setContentDescription(getContext().getString(description));
-        button.setOnClickListener(v -> onClick.run());
-        toolbarButtons.add(button);
-        return button;
+    public void setSettingsListener(SettingsListener listener) {
+        settingsListener = listener;
+        if (listener != null && appliedSettings[0] >= 0)
+            listener.changed(appliedSettings[0], appliedSettings[1], appliedSettings[2] != 0);
     }
 
-    public void cancelToolbarPresses() {
-        for (ToolbarButton button : toolbarButtons) button.cancelPress();
-    }
-
-    public final class ToolbarButton extends View {
-        private final String label;
-        private final boolean mapIcon;
-        private int activePointer = -1;
-
-        private ToolbarButton(Context context, String label, boolean mapIcon) {
-            super(context);
-            this.label = label;
-            this.mapIcon = mapIcon;
-            setFocusable(true);
-            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-        }
-
-        private void cancelPress() {
-            activePointer = -1;
-            setPressed(false);
-            invalidate();
-        }
-
-        private boolean inside(float x, float y) {
-            return x >= 0 && y >= 0 && x < getWidth() && y < getHeight();
-        }
-
-        @Override public boolean onTouchEvent(MotionEvent event) {
-            int action = event.getActionMasked();
-            if (action == MotionEvent.ACTION_DOWN) {
-                if (!isEnabled()) return false;
-                activePointer = event.getPointerId(0);
-                setPressed(true);
-                invalidate();
-                return true;
-            }
-            if (activePointer < 0) return false;
-            if (action == MotionEvent.ACTION_CANCEL) { cancelPress(); return true; }
-            int index = event.findPointerIndex(activePointer);
-            if (index < 0) { cancelPress(); return true; }
-            if (action == MotionEvent.ACTION_MOVE && !inside(event.getX(index), event.getY(index))) {
-                cancelPress(); return true;
-            }
-            if (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.getActionIndex()) == activePointer) {
-                cancelPress(); return true;
-            }
-            if (action == MotionEvent.ACTION_UP) {
-                boolean click = inside(event.getX(index), event.getY(index));
-                cancelPress();
-                if (click) performClick();
-                return true;
-            }
-            return true;
-        }
-
-        @Override public boolean performClick() { super.performClick(); return true; }
-
-        @Override protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            drawToolbarControl(canvas, label, mapIcon, isPressed(), getWidth(), getHeight());
-        }
+    private void syncAppliedSettings() {
+        if (!nativeReadSettings(settingsProbe) || Arrays.equals(settingsProbe, appliedSettings)) return;
+        System.arraycopy(settingsProbe, 0, appliedSettings, 0, appliedSettings.length);
+        setEdgeMargins(appliedSettings[0], appliedSettings[1]);
+        if (settingsListener != null)
+            settingsListener.changed(appliedSettings[0], appliedSettings[1], appliedSettings[2] != 0);
     }
 
     /** labels为本地化表中的15项：12键、摇杆、换组、难度；menuLabels为导航态前五键。 | Pass 15 localized game labels and five navigation labels from the shared string table. */
@@ -202,8 +117,8 @@ public final class TouchOverlay extends View {
         resizeNative();
     }
     public void setEdgeMargins(int leftDp, int rightDp) {
-        leftDp=Math.max(0,Math.min(TouchMarginSettings.MAX_DP,leftDp));
-        rightDp=Math.max(0,Math.min(TouchMarginSettings.MAX_DP,rightDp));
+        leftDp=Math.max(0,Math.min(96,leftDp));
+        rightDp=Math.max(0,Math.min(96,rightDp));
         if (marginLeft==leftDp && marginRight==rightDp) return;
         cancelTouches();
         marginLeft=leftDp; marginRight=rightDp;
@@ -214,9 +129,8 @@ public final class TouchOverlay extends View {
     /** 仅在libdm加载且guest启动成功后开启；暂停时先取消触点。 | Enable only after libdm loads and the guest starts; disabling cancels first. */
     public void setInputEnabled(boolean enabled) {
         if (inputEnabled==enabled) return;
-        if (!enabled) { cancelTouches(); publishGameplay(false); publishSortContext(-1); }
+        if (!enabled) cancelTouches();
         inputEnabled=enabled;
-        for (ToolbarButton button : toolbarButtons) button.invalidate();
         drawnValid=false; invalidate();
         if (enabled) {
             images.clear(); art.clear(); glyphs.clear(); glowOffsets.clear();
@@ -224,8 +138,7 @@ public final class TouchOverlay extends View {
                 skillAtlases[i]=image("touchart/dm_native_skill_"+i+".png"); silAtlases[i]=image("hud_v4_ui/sil_dm_native_skill_"+i+".png");
             }
             mapArt=image("touchart/dm_native_map.png"); circleArt=image("touchart/dm_native_circle.png"); socketArt=image("touchart/dm_mobile_socket.png");
-            for (ToolbarButton button : toolbarButtons) button.invalidate();
-            try { hudUi=new JSONObject(new String(Files.readAllBytes(new File(overlayRoot,"hud_v4_ui/ui.json").toPath()),StandardCharsets.UTF_8)); }
+                try { hudUi=new JSONObject(new String(Files.readAllBytes(new File(overlayRoot,"hud_v4_ui/ui.json").toPath()),StandardCharsets.UTF_8)); }
             catch(Exception ignored) { hudUi=null; }
             resizeNative();
         }
@@ -241,7 +154,7 @@ public final class TouchOverlay extends View {
         super.onAttachedToWindow(); running=true; drawnValid=false; invalidate(); Choreographer.getInstance().postFrameCallback(poll);
     }
     @Override protected void onDetachedFromWindow() {
-        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); publishGameplay(false); publishSortContext(-1); super.onDetachedFromWindow();
+        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); super.onDetachedFromWindow();
     }
     public void cancelTouches() {
         if (!inputEnabled) { Arrays.fill(pointerIds,-1); return; }
@@ -436,13 +349,6 @@ public final class TouchOverlay extends View {
             canvas.drawBitmap(mapArt,new Rect(sx,0,sx+frame,frame),new RectF(x-half,y-half,x+half,y+half),bitmapPaint);
             bitmapPaint.setAlpha(255);
         } else caption(canvas,text,x,y-textSize*.6f,textSize,held?1:.84f);
-    }
-    private void drawToolbarControl(Canvas canvas,String label,boolean mapIcon,boolean held,int widthPx,int heightPx) {
-        canvas.save(); canvas.scale(density,density);
-        float x=widthPx/density/2f,y=heightPx/density/2f;
-        float r=Math.min(x,y)*.92f;
-        circleControl(canvas,x,y,r,held,label,Math.min(10f,r*.48f),mapIcon);
-        canvas.restore();
     }
     // skillImage：同帧位的银色剪影（无剪影图时退回原版图集、四边各裁 8%），保留明暗、统一为银灰。
     // skillImage: the silver silhouette at the same frame (without it, the original atlas trimmed 8% on each side), keeping the shading, all silver grey.

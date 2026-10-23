@@ -25,16 +25,12 @@ import android.view.inputmethod.BaseInputConnection;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.TextView;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.SeekBar;
 import android.widget.Toast;
 import java.io.File;
 import java.io.FileInputStream;
@@ -58,17 +54,13 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private static WeakReference<DmActivity> current = new WeakReference<>(null);
     private static volatile int bootFailure;
     private AlertDialog inputDialog;
-    private AlertDialog touchSettingsDialog;
 
     private SurfaceView view;
     private FrameLayout gameFrame;
     private TouchOverlay touchOverlay;
     private PerformanceOverlay performanceOverlay;
-    private TouchOverlay.ToolbarButton touchSettingsButton;
-    private TouchOverlay.ToolbarButton sortButton;
-    private LinearLayout touchToolbar;
-    private final TouchOverlay.ToolbarButton[] gameplayActions = new TouchOverlay.ToolbarButton[3];
-    private int safeToolbarLeft, safeToolbarRight, safeToolbarTop;
+    private boolean legacyTouchSettingsSeeded;
+    private boolean monitoringEnabled;
     private boolean started;
     private boolean importing;
     private boolean libraryLoaded;
@@ -92,9 +84,6 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         view.getHolder().addCallback(this);
         gameFrame = new FrameLayout(this);
         gameFrame.addView(view, new FrameLayout.LayoutParams(-1, -1));
-        gameFrame.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (right-left != oldRight-oldLeft) layoutTouchToolbar();
-        });
         setContentView(gameFrame);
         immersive();
     }
@@ -136,93 +125,20 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         return getString(R.string.dmAndroidImportLocation, BuildConfig.DM_IMPORT_DIRECTORY);
     }
 
-    private TouchMarginSettings.Store touchMarginStore() {
-        SharedPreferences prefs = getSharedPreferences("touch_margins", MODE_PRIVATE);
-        return new TouchMarginSettings.Store() {
-            public int get(String key) { return prefs.getInt(key, 0); }
-            public boolean put(int left, int right) {
-                return prefs.edit().putInt("left", left).putInt("right", right).commit();
-            }
-        };
+    private void seedLegacyTouchSettings() {
+        if (legacyTouchSettingsSeeded) return;
+        SharedPreferences margins = getSharedPreferences("touch_margins", MODE_PRIVATE);
+        int left = Math.max(0, Math.min(96, margins.getInt("left", 0)));
+        int right = Math.max(0, Math.min(96, margins.getInt("right", 0)));
+        boolean monitor = getSharedPreferences("performance_monitoring", MODE_PRIVATE).getBoolean("enabled", false);
+        TouchOverlay.seedLegacySettings(left, right, monitor);
+        legacyTouchSettingsSeeded = true;
     }
 
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-
-    private void layoutTouchToolbar() {
-        if (touchToolbar == null || gameFrame.getWidth() <= 0) return;
-        if (touchToolbar.getPaddingLeft() != safeToolbarLeft || touchToolbar.getPaddingRight() != safeToolbarRight)
-            touchToolbar.setPadding(safeToolbarLeft, 0, safeToolbarRight, 0);
-        int cell = TouchActionBarSizing.cellWidth(gameFrame.getWidth(), safeToolbarLeft, safeToolbarRight,
-                getResources().getDisplayMetrics().density);
-        for (TouchOverlay.ToolbarButton button : gameplayActions) if (button != null && button.getLayoutParams().width != cell)
-            button.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
-        if (sortButton != null && sortButton.getLayoutParams().width != cell)
-            sortButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
-        if (touchSettingsButton != null && touchSettingsButton.getLayoutParams().width != cell)
-            touchSettingsButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
-        FrameLayout.LayoutParams placement = (FrameLayout.LayoutParams) touchToolbar.getLayoutParams();
-        int top = safeToolbarTop + dp(8);
-        if (placement.topMargin != top) { placement.topMargin = top; touchToolbar.setLayoutParams(placement); }
-    }
-
-    private boolean monitoringPreference() {
-        return getSharedPreferences("performance_monitoring", MODE_PRIVATE).getBoolean("enabled", false);
-    }
-
-    private void saveTouchSettings(int left, int right, boolean monitoring) {
-        if (!TouchMarginSettings.save(touchMarginStore(), left, right)) {
-            Toast.makeText(this, R.string.dmAndroidTouchSaveFailed, Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (touchOverlay != null) touchOverlay.setEdgeMargins(left, right);
-        if (!getSharedPreferences("performance_monitoring", MODE_PRIVATE).edit().putBoolean("enabled", monitoring).commit()) {
-            Toast.makeText(this, R.string.dmAndroidTouchSaveFailed, Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && monitoring);
-    }
-
-    private void showTouchSettings() {
-        if (!resumed || isFinishing() || isDestroyed() || inputDialog != null || touchSettingsDialog != null) return;
-        releaseTouches();
-        TouchMarginSettings.Values saved = TouchMarginSettings.load(touchMarginStore());
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.VERTICAL);
-        controls.setPadding(dp(24), dp(12), dp(24), dp(12));
-        TextView leftText = new TextView(this), rightText = new TextView(this);
-        SeekBar left = new SeekBar(this), right = new SeekBar(this);
-        left.setMax(TouchMarginSettings.MAX_DP); right.setMax(TouchMarginSettings.MAX_DP);
-        left.setProgress(saved.left); right.setProgress(saved.right);
-        leftText.setText(getString(R.string.dmAndroidTouchLeftMargin, saved.left));
-        rightText.setText(getString(R.string.dmAndroidTouchRightMargin, saved.right));
-        left.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int progress, boolean user) { leftText.setText(getString(R.string.dmAndroidTouchLeftMargin, progress)); }
-            public void onStartTrackingTouch(SeekBar bar) {}
-            public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        right.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar bar, int progress, boolean user) { rightText.setText(getString(R.string.dmAndroidTouchRightMargin, progress)); }
-            public void onStartTrackingTouch(SeekBar bar) {}
-            public void onStopTrackingTouch(SeekBar bar) {}
-        });
-        controls.addView(leftText); controls.addView(left);
-        controls.addView(rightText); controls.addView(right);
-        CheckBox monitoring = new CheckBox(this);
-        monitoring.setText(R.string.performance_monitoring);
-        monitoring.setChecked(monitoringPreference());
-        controls.addView(monitoring);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle(R.string.dmAndroidTouchSettings).setView(controls)
-            .setPositiveButton(R.string.dmConfirm, (d, which) -> saveTouchSettings(left.getProgress(), right.getProgress(), monitoring.isChecked()))
-            .setNeutralButton(R.string.dmAndroidTouchRestore, (d, which) -> saveTouchSettings(0, 0, false))
-            .setNegativeButton(R.string.dmCancel, (d, which) -> {})
-            .create();
-        touchSettingsDialog = dialog;
-        dialog.setOnDismissListener(d -> {
-            if (touchSettingsDialog == dialog) touchSettingsDialog = null;
-            if (resumed) immersive();
-        });
-        dialog.show();
+    private void applyMonitoringSetting(boolean enabled) {
+        monitoringEnabled = enabled;
+        if (performanceOverlay != null)
+            performanceOverlay.setMonitoringEnabled(started && resumed && bootFailure == 0 && enabled);
     }
 
     private static String readText(File f) {
@@ -337,6 +253,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             try { System.loadLibrary("dm"); libraryLoaded = true; }
             catch (UnsatisfiedLinkError error) { showStartError(getString(R.string.dmAndroidLibrary)); return; }
         }
+        seedLegacyTouchSettings();
         if (performanceOverlay == null) {
             performanceOverlay = new PerformanceOverlay(this);
             gameFrame.addView(performanceOverlay, new FrameLayout.LayoutParams(-1, -1));
@@ -350,53 +267,14 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             for (int i = 0; i < gameIds.length; i++) gameLabels[i] = getString(gameIds[i]);
             for (int i = 0; i < navIds.length; i++) navLabels[i] = getString(navIds[i]);
             touchOverlay = new TouchOverlay(this, gameLabels, navLabels);
-            TouchMarginSettings.Values margins = TouchMarginSettings.load(touchMarginStore());
-            touchOverlay.setEdgeMargins(margins.left, margins.right);
+            touchOverlay.setSettingsListener((left, right, monitor) -> applyMonitoringSetting(monitor));
             touchOverlay.setOnApplyWindowInsetsListener((v, insets) -> {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.displayCutout());
                 touchOverlay.setSafeInsets(safe.left, safe.right, safe.bottom);
                 performanceOverlay.setSafeInsets(safe.left, safe.top, safe.right, safe.bottom);
-                safeToolbarLeft = safe.left; safeToolbarRight = safe.right; safeToolbarTop = safe.top;
-                layoutTouchToolbar();
                 return insets;
             });
             gameFrame.addView(touchOverlay, new FrameLayout.LayoutParams(-1, -1));
-            touchToolbar = new LinearLayout(this);
-            touchToolbar.setOrientation(LinearLayout.HORIZONTAL);
-            touchToolbar.setGravity(Gravity.CENTER_HORIZONTAL);
-            int[] labels = {R.string.dmAndroidMapVisibilityShort, R.string.dmAndroidMapPositionShort,
-                    R.string.dmAndroidItemNamesShort};
-            int[] descriptions = {R.string.dmAndroidMapVisibility, R.string.dmAndroidMapPosition,
-                    R.string.dmAndroidItemNames};
-            int[] actions = {TouchOverlay.ACTION_MAP_VISIBILITY, TouchOverlay.ACTION_MAP_POSITION,
-                    TouchOverlay.ACTION_ITEM_NAMES};
-            for (int i=0; i<gameplayActions.length; i++) {
-                final int action = actions[i];
-                gameplayActions[i] = touchOverlay.toolbarButton(labels[i], descriptions[i], i==0,
-                        () -> touchOverlay.sendGameplayAction(action));
-                gameplayActions[i].setVisibility(View.GONE);
-                touchToolbar.addView(gameplayActions[i], new LinearLayout.LayoutParams(dp(48), dp(48)));
-            }
-            sortButton = touchOverlay.toolbarButton(R.string.dmAndroidSortShort,
-                    R.string.dmAndroidSortBag, false, touchOverlay::sendSortAction);
-            sortButton.setVisibility(View.GONE);
-            touchToolbar.addView(sortButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            touchSettingsButton = touchOverlay.toolbarButton(R.string.dmAndroidTouchSettingsShort,
-                    R.string.dmAndroidTouchSettings, false, this::showTouchSettings);
-            touchToolbar.addView(touchSettingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-            FrameLayout.LayoutParams toolbarPlacement = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);
-            toolbarPlacement.topMargin = dp(8);
-            gameFrame.addView(touchToolbar, toolbarPlacement);
-            touchOverlay.setGameplayListener(gameplay -> {
-                for (TouchOverlay.ToolbarButton action : gameplayActions) action.setVisibility(gameplay ? View.VISIBLE : View.GONE);
-                layoutTouchToolbar();
-            });
-            touchOverlay.setSortListener(page -> {
-                sortButton.setVisibility(page == 0 || (page >= 4 && page <= 8) ? View.VISIBLE : View.GONE);
-                sortButton.setContentDescription(getString(page >= 4 ? R.string.dmAndroidSortPersonal : R.string.dmAndroidSortBag));
-                layoutTouchToolbar();
-            });
-            layoutTouchToolbar();
             touchOverlay.requestApplyInsets();
         }
         if (!view.getHolder().getSurface().isValid() || view.getWidth() <= 0 || view.getHeight() <= 0) return;
@@ -429,7 +307,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         started = true;
         touchOverlay.setInputEnabled(true);
         nativeFocus(3);
-        performanceOverlay.setMonitoringEnabled(monitoringPreference());
+        applyMonitoringSetting(monitoringEnabled);
     }
 
     private void showStartError(String message) {
@@ -541,7 +419,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     }
 
     private void releaseTouches() {
-        if (touchOverlay != null) { touchOverlay.cancelToolbarPresses(); touchOverlay.cancelTouches(); }
+        if (touchOverlay != null) touchOverlay.cancelTouches();
         if (started) nativeTouch(0, new int[0], new float[0], new float[0]);
     }
 
@@ -551,11 +429,11 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     @Override public void onDisplayAdded(int id) { updateRefresh(); }
     @Override public void onDisplayRemoved(int id) { updateRefresh(); }
     @Override public void onDisplayChanged(int id) { updateRefresh(); }
-    @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && bootFailure == 0 && monitoringPreference()); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } }
-    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && bootFailure == 0 && monitoringEnabled); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } }
+    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
     @Override protected void onStart() { super.onStart(); if (started) nativeFocus(2); }
     @Override protected void onStop() { if (started) nativeFocus(1); com.xiaoboluo.d2r.widget.HeroWidgetProvider.requestUpdate(this); super.onStop(); }
-    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); else releaseTouches(); }
 
     @Override public void surfaceCreated(SurfaceHolder h) {}
