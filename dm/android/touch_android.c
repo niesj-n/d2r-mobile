@@ -3,6 +3,7 @@
 #include "../host/dm_input.h"
 #include "../host/dm_cursor.h"
 #include "../host/dm_actions.h"
+#include "../host/dm_product_ui.h"
 /* Queued by the host and applied on the guest sampling thread. */
 extern void dm_ui_map_cycle_position(void);
 #include "../host/dm_hud.h"
@@ -38,6 +39,11 @@ static unsigned action_head, action_tail;
 static int action_release;
 static uint64_t labels_ready_at;
 static int labels_done;
+/* Owned separately from skill fingers: captured touches can never fall through
+ * to map dismissal, world clicks, aiming or movement, even after sliding out. */
+typedef struct { int index, cancelled; } quick_gesture;
+static quick_gesture quick[DM_TC_MAX_TOUCH];
+static uint64_t quick_flash[DM_ANDROID_TOUCH_QUICK_COUNT];
 static int ready, focused = 1, cancel, resizing, ui_drag;
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
 static float margin_left, margin_right;
@@ -94,6 +100,8 @@ static void init_locked(void) {
 }
 static void cancel_locked(void) {
     dm_tc_cancel_all(&tc);
+    dm_product_ui_touch(3);
+    memset(quick,0,sizeof quick); memset(quick_flash,0,sizeof quick_flash);
     if (ui_drag) dm_ui_drag_end();
     ui_drag = 0;
     fe_end_locked();
@@ -129,16 +137,22 @@ void dm_android_touch_tablet(int tablet) {
     tablet_layout = !!tablet; resizing = cancel = 1; dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
-void dm_android_touch_action(int action) {
+/* Caller holds lock, including the native quick-touch route. */
+static int action_locked(int action) {
     if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION &&
-        action != DM_ANDROID_ACTION_ITEM_NAMES && action != DM_ANDROID_ACTION_SORT) return;
-    pthread_mutex_lock(&lock);
+        action != DM_ANDROID_ACTION_ITEM_NAMES && action != DM_ANDROID_ACTION_SORT) return 0;
     int sort = action == DM_ANDROID_ACTION_SORT, page = sort ? dm_ui_sort_context() : -1;
     if (focused && ready && scene.game && !frontend &&
         (sort ? tc.navigation_mode && (page == 0 || (page >= 4 && page <= 8)) : !tc.navigation_mode) && action_tail-action_head < 256) {
         unsigned slot = action_tail++ % 256;
         action_queue[slot] = action; action_page[slot] = page;
+        return 1;
     }
+    return 0;
+}
+void dm_android_touch_action(int action) {
+    pthread_mutex_lock(&lock);
+    action_locked(action);
     pthread_mutex_unlock(&lock);
 }
 int dm_android_touch_sort_context(void) {
@@ -252,6 +266,43 @@ static void release_pointer(dm_tc_finger *f) {
     } else if ((kind == 5 && dm_ui_drop_point(&x,&y)) || (kind == 0 && dm_ui_origin_point(&x,&y))) dm_tc_pointer_release_at(&tc,x*width,y*height);
     else { if (kind == 7) { dm_shop_sell_cursor(); kind = 0; } dm_tc_pointer_release(&tc,kind); }
 }
+/* Share this exact native geometry between serialization and capture. Anchoring
+ * to MAIN also follows the existing safe-area and right-margin translation. */
+static dm_tc_target quick_circle(int index) {
+    float k=dm_tc_scale_for_size(tc.layout.width,tc.layout.height);
+    const dm_tc_target *main=&tc.layout.target[DM_TC_MAIN];
+    /* Tall tablet HUD belt rows are wider; keep the column closer to the
+     * original fan and above its set switch while retaining the same anchor. */
+    float dx=tc.layout.tablet ? 146 : 172, dy=tc.layout.tablet ? 248 : 212;
+    return (dm_tc_target){main->x-dx*k,main->y-(dy-46*index)*k,18*k,0};
+}
+static int quick_visible(void) {
+    return focused && ready && scene.game && !frontend && !tc.navigation_mode &&
+           !cancel && !resizing && dm_uiscreen_ingame();
+}
+static int quick_inside(dm_tc_target t,float x,float y) {
+    return t.r>0 && hypotf(x-t.x,y-t.y)<=t.r;
+}
+static int quick_event(const touch_event *e) {
+    quick_gesture *g=&quick[e->slot];
+    if (e->phase==0) {
+        memset(g,0,sizeof *g);
+        if (!quick_visible()) return 0;
+        for (int i=0;i<DM_ANDROID_TOUCH_QUICK_COUNT;++i) {
+            if (quick_inside(quick_circle(i),e->x,e->y)) { g->index=i+1; return 1; }
+        }
+        return 0;
+    }
+    if (!g->index) return 0;
+    int index=g->index-1;
+    if (!quick_visible() || !quick_inside(quick_circle(index),e->x,e->y)) g->cancelled=1;
+    if (e->phase==2) {
+        if (!g->cancelled && action_locked(DM_ANDROID_ACTION_MAP_VISIBILITY+index))
+            quick_flash[index]=now_ns()+UINT64_C(140000000);
+        memset(g,0,sizeof *g);
+    } else if (e->phase==3) memset(g,0,sizeof *g);
+    return 1;
+}
 /* 空技能位和小地图先截获，不发攻击、世界点击或摇杆输入。
    Capture empty skill slots and minimap taps before emitting attack, world-tap or joystick input. */
 static int direct_begin(const touch_event *e) {
@@ -338,6 +389,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     while (head != tail) {
         touch_event e = queue[head++ % 256];
         if (frontend) { fe_event_locked(&e); continue; }
+        if (quick_event(&e)) continue;
         if (direct_event(&e) || (e.phase==0 && direct_begin(&e))) continue;
         dm_tc_finger *f = &tc.finger[e.slot];
         uint64_t before_buttons = tc.buttons;
@@ -346,6 +398,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         if (e.phase == 0) latched[e.slot] = 0;
         if (e.phase == 0) {
             if (dm_tc_belt_outside(&tc,e.x,e.y)) { dm_belt_expand(0); continue; }
+            if (tc.navigation_mode) dm_product_ui_touch(0);
             dm_tc_begin_at(&tc,e.slot,e.x,e.y,e.time);
             if (!tc.navigation_mode && f->target == DM_TC_PORTAL) { dm_tc_cancel_finger(&tc,e.slot); dm_tp_request(); }
             if (tc.navigation_mode && tc.pointer_slot == e.slot) dm_tc_pointer_item(&tc,dm_ui_item_at_now(e.x/width,e.y/height));
@@ -384,6 +437,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
                 }
             }
         } else {
+            if (tc.navigation_mode) dm_product_ui_touch(3);
             /* 系统取消物品拖动时回原位，不当作丢弃/购买。 | System cancellation returns dragged items; it never buys or discards. */
             if (tc.pointer_slot == e.slot && f->pointer_dragged && !f->shop_drag) {
                 dm_tc_pointer_release(&tc,0); dm_tc_end_at(&tc,e.slot,e.time);
@@ -417,7 +471,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     }
     if (!tc.pulse_button && dm_tc_pulse_pending(&tc) && resume_sample && sample >= resume_sample) { dm_tc_pulse_resume(&tc); resume_sample = 0; }
     if (tc.pointer_valid) dm_cursor_set_screen(tc.pointer_x,tc.pointer_y,width,height); else dm_cursor_clear();
-    int active = 0; for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active;
+    int active = 0; for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active || quick[i].index;
     dm_ui_hand_idle(!active && action_head==action_tail && !action_release &&
                     !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
     int gameplay = scene.game && !frontend && !tc.navigation_mode, dispatched = 0;
@@ -502,5 +556,16 @@ void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]) {
     hud[7]=h.players; hud[8]=h.hp; hud[9]=h.hp_max; hud[10]=h.mp; hud[11]=h.mp_max;
     hud[12]=h.points; hud[13]=h.quest_unread; hud[14]=h.dead; hud[15]=tc.map_cancel_active;
     hud[16]=tc.lx; hud[17]=tc.ly;   /* 摇杆推量（−32767..32767），画摇杆头用，同 iOS DmTouchOverlay | stick deflection (−32767..32767) for drawing the thumb, as iOS DmTouchOverlay */
+    int show_quick=quick_visible();
+    uint64_t draw_now=now_ns();
+    for (int i=0;i<DM_ANDROID_TOUCH_QUICK_COUNT;++i) {
+        dm_tc_target t=quick_circle(i); float *p=out+DM_ANDROID_TOUCH_QUICK+i*5;
+        p[0]=t.x; p[1]=t.y; p[2]=t.r; p[3]=show_quick;
+        if (show_quick) {
+            p[4]=draw_now<quick_flash[i];
+            for (int j=0;j<DM_TC_MAX_TOUCH;++j)
+                if (quick[j].index==i+1 && !quick[j].cancelled) p[4]=1;
+        }
+    }
     pthread_mutex_unlock(&lock);
 }

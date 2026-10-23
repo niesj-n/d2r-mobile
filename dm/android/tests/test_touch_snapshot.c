@@ -13,6 +13,9 @@
 
 #include "dm/android/touch_android.c"
 #include "dm/ios/Sources/dm_touch_controls.c"
+#define dm_product_ui_touch test_product_ui_real_touch
+#include "dm/host/dm_product_ui.c"
+#undef dm_product_ui_touch
 #ifndef DM_ANDROID_TOUCH_MARGINS_AVAILABLE
 #define dm_tc_set_android_edge_margins(l,r) ((void)0)
 #define dm_android_touch_margins(l,r) ((void)0)
@@ -29,16 +32,20 @@ enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
 #define dm_android_touch_cancel_pending() ((void)0)
 #endif
 
-_Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 185, "Review the Java/native ABI before changing this test");
+_Static_assert(DM_ANDROID_TOUCH_GLYPHS==119 && DM_ANDROID_TOUCH_HUD==167 && DM_ANDROID_TOUCH_QUICK==185 && DM_ANDROID_TOUCH_QUICK_COUNT==3, "The legacy prefix offsets must stay stable");
+_Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 200, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
 static const char *case_name = "startup";
 static unsigned checks, cases;
 static uint64_t test_clock_ns = UINT64_C(100000000000), test_sample;
 static int observed_panel;
+static int product_down_calls, product_cancel_calls;
+void dm_product_ui_touch(int phase) { if (phase==0) ++product_down_calls; else if (phase==3) ++product_cancel_calls; else abort(); test_product_ui_real_touch(phase); }
+
 static unsigned panel_calls;
 static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_calls, map_position_calls;
 static int map_absolute=-1, map_toggles_pending;
-static int observed_idle;
+static int observed_idle, observed_swap_above, allow_synthetic_touch, synthetic_touch_calls;
 static int observed_ingame=1, observed_cursor_pending;
 static int sort_context=-1, sort_inventory_calls, sort_personal_calls, sort_cancel_calls, sort_last_token=-1;
 
@@ -78,7 +85,7 @@ int dm_ui_touch_active(void) { return 0; }
 int dm_ui_bind_active(void) { return 0; }
 int dm_belt_rows(int *expanded) { if (expanded) *expanded = 0; return 1; }
 void dm_hud_get(dm_hud_info *out) { memset(out, 0, sizeof *out); }
-int dm_custom_get(const char *key) { (void)key; return 0; }
+int dm_custom_get(const char *key) { return !strcmp(key,"touch_swap_above") ? observed_swap_above : 0; }
 void dm_ui_safe_left(int units) { (void)units; }
 void dm_ui_safe_right(int units) { (void)units; }
 int dm_touch_game_snapshot(dm_tg_snapshot *out) { memset(out,0,sizeof *out); return 0; }
@@ -114,7 +121,7 @@ void dm_stat_add(int stat,int n) { (void)stat; (void)n; unexpected_host_call(__f
 void dm_skill_add_selected(void) { unexpected_host_call(__func__); }
 
 void dm_cursor_set_screen(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; unexpected_host_call(__func__); }
-void dm_ui_touch(int phase, float x, float y) { (void)phase; (void)x; (void)y; unexpected_host_call(__func__); }
+void dm_ui_touch(int phase, float x, float y) { (void)x; (void)y; if (!allow_synthetic_touch) unexpected_host_call(__func__); REQUIRE(phase==0 || phase==2); ++synthetic_touch_calls; }
 int dm_ui_fe_drag_ok(void) { unexpected_host_call(__func__); return 0; }
 void dm_ui_drag_begin(int kind, float x, float y, float tolerance) { (void)kind; (void)x; (void)y; (void)tolerance; unexpected_host_call(__func__); }
 void dm_ui_drag_move(float x, float y) { (void)x; (void)y; unexpected_host_call(__func__); }
@@ -156,13 +163,17 @@ static void fixture(int navigation) {
     memset(queue, 0, sizeof queue);
     head = tail = 0; ready = 0; focused = 1; cancel = resizing = ui_drag = 0;
     action_head = action_tail = 0; action_release = 0;
+    memset(quick,0,sizeof quick); memset(quick_flash,0,sizeof quick_flash);
+    product_down_calls=product_cancel_calls=0;
+    margin_left=margin_right=0;
     width = 800; height = 375; safe_left = safe_right = safe_bottom = 0; tablet_layout = swap_above = 0;
     epoch = world = 1; pulse_epoch = pulse_sample = resume_sample = 0; pulse_hold_start = 0;
     seen_world = seen_mouse = seen_tab = seen_use = seen_ident = seen_long = seen_item = seen_stack = 0;
     frontend = 0; fe_slot = -1; fe_drag = 0; fe_x0 = fe_y0 = 0;
     test_clock_ns = UINT64_C(100000000000); test_sample = 0;
     observed_panel=-1; panel_calls=0;
-    observed_idle=-1;
+    observed_idle=-1; observed_swap_above=0; allow_synthetic_touch=synthetic_touch_calls=0;
+    dm_product_ui_scene(-1,0); test_product_ui_real_touch(3);
     observed_ingame=1; observed_cursor_pending=0;
     sort_context=-1; sort_inventory_calls=sort_personal_calls=sort_cancel_calls=0; sort_last_token=-1;
     map_full=map_full_calls=map_toggle_calls=map_center_calls=map_position_calls=map_toggles_pending=0;
@@ -667,6 +678,160 @@ static void test_android_default_names_wait_for_loading_and_cursor(void) {
     REQUIRE((queue_sample() & DM_BTN_L)!=0);
 }
 
+
+/* Expected appended ABI, intentionally independent of the new production enum
+ * so the unchanged 185-float bridge can execute the RED regression. */
+static void test_quick_snapshot_append(void) {
+    fixture(0); scene.game=1;
+    float s[200]={0}; dm_android_touch_layout(s);
+    REQUIRE(s[188]==1); REQUIRE(s[193]==1); REQUIRE(s[198]==1);
+    REQUIRE(fabsf(s[185]-(tc.layout.target[DM_TC_MAIN].x-172))<.01f);
+}
+static void test_quick_input_regression(void) {
+    fixture(0); scene.game=1;
+    float x=tc.layout.target[DM_TC_MAIN].x-172, y=tc.layout.target[DM_TC_MAIN].y-212;
+    dm_android_touch_event(0,0,x,y); dm_android_touch_event(2,0,x,y);
+    REQUIRE(queue_sample()==DM_BTN_MINUS);
+    REQUIRE(tc.joy_slot<0 && tc.lx==0 && tc.ly==0 && tc.rx==0 && tc.ry==0);
+}
+
+
+static void quick_tap(int index,int slot) {
+    dm_tc_target t=quick_circle(index);
+    dm_android_touch_event(0,slot,t.x,t.y); dm_android_touch_event(2,slot,t.x,t.y);
+}
+static void test_quick_feedback_fifo_and_fullmap(void) {
+    fixture(0); scene.game=1; map_full=1;
+    float s[DM_ANDROID_TOUCH_DRAW_FLOATS]; dm_tc_target q=quick_circle(2);
+    dm_android_touch_event(0,0,q.x,q.y);
+    REQUIRE(queue_sample()==0 && observed_idle==0); read_twice(s); REQUIRE(s[199]==1);
+    test_clock_ns+=UINT64_C(2000000000);
+    REQUIRE(queue_sample()==0 && !labels_done); /* Holding manual labels must defer defaults. */
+    dm_android_touch_event(2,0,q.x,q.y);
+    REQUIRE(queue_sample()==DM_BTN_L && labels_done); read_twice(s); REQUIRE(s[199]==1);
+    REQUIRE(queue_sample()==0);
+    test_clock_ns+=UINT64_C(150000000);
+    read_twice(s); REQUIRE(s[199]==0);
+    REQUIRE(queue_sample()==0); /* Manual choice never gets reversed by the default L. */
+    quick_tap(0,0); quick_tap(0,0); quick_tap(1,1); quick_tap(2,2);
+    REQUIRE(queue_sample()==DM_BTN_MINUS);
+    REQUIRE(queue_sample()==0);
+    REQUIRE(queue_sample()==DM_BTN_MINUS);
+    REQUIRE(queue_sample()==0);
+    REQUIRE(queue_sample()==0 && map_position_calls==1);
+    REQUIRE(queue_sample()==DM_BTN_L);
+    REQUIRE(queue_sample()==0);
+    REQUIRE(map_full_calls==0 && map_full==1 && tc.skill_set==0);
+    REQUIRE(tc.lx==0 && tc.ly==0 && tc.rx==0 && tc.ry==0 && tc.joy_slot<0);
+    REQUIRE(tc.world_tap_seq==0 && tc.mouse_click_seq==0 && product_down_calls==0);
+    dm_tc_target main=tc.layout.target[DM_TC_MAIN];
+    dm_android_touch_event(0,3,main.x,main.y); quick_tap(1,1);
+    REQUIRE(queue_sample()==DM_BTN_A && map_position_calls==2 && tc.finger[3].active);
+    dm_android_touch_event(3,3,main.x,main.y); REQUIRE(queue_sample()==0);
+}
+static void test_quick_slide_up_and_system_cancels(void) {
+    fixture(0); scene.game=1; dm_tc_target q=quick_circle(0), main=tc.layout.target[DM_TC_MAIN];
+    float s[DM_ANDROID_TOUCH_DRAW_FLOATS];
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    read_twice(s); REQUIRE(s[189]==1);
+    dm_android_touch_event(1,0,main.x,main.y); REQUIRE(queue_sample()==0);
+    read_twice(s); REQUIRE(s[189]==0 && !tc.finger[0].active);
+    dm_android_touch_event(1,0,q.x,q.y); dm_android_touch_event(2,0,q.x,q.y);
+    REQUIRE(queue_sample()==0 && action_head==action_tail);
+    dm_android_touch_event(0,0,q.x,q.y); dm_android_touch_event(2,0,q.x+q.r+1,q.y);
+    REQUIRE(queue_sample()==0);
+    dm_android_touch_event(0,0,q.x,q.y); dm_android_touch_event(3,0,q.x,q.y);
+    REQUIRE(queue_sample()==0);
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_focus(0); read_twice(s); REQUIRE(s[188]==0 && s[189]==0);
+    REQUIRE(queue_sample()==0 && !quick[0].index);
+    dm_android_touch_focus(1); REQUIRE(queue_sample()==0);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_cancel_pending(); REQUIRE(queue_sample()==0 && !quick[0].index);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_resize(852,393,20,24,16); REQUIRE(queue_sample()==0 && !quick[0].index);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    q=quick_circle(0); dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_margins(24,48); REQUIRE(queue_sample()==0 && !quick[0].index);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    q=quick_circle(0); dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_uimsg("PanelManager","OpenPanel","PlayerInventoryExpansionLayout");
+    read_twice(s); REQUIRE(s[188]==0 && !quick[0].index);
+    dm_android_touch_uimsg("PanelManager","UnloadPanel","PlayerInventoryExpansionLayout");
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0);
+}
+static void test_quick_visibility_and_native_sort_phases(void) {
+    fixture(0); float s[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(s); REQUIRE(s[188]==0);
+    scene.game=1; read_twice(s); REQUIRE(s[188]==1);
+    observed_ingame=0; read_twice(s); REQUIRE(s[188]==0);
+    observed_ingame=1; frontend=1; read_twice(s); REQUIRE(s[188]==0);
+    frontend=0; dm_tc_set_navigation_mode(&tc,1); read_twice(s);
+    REQUIRE(s[188]==0 && s[193]==0 && s[198]==0);
+    dm_product_ui_scene(4,91); REQUIRE(dm_product_ui_sort(4,91)==-1);
+    dm_tc_target t=tc.layout.target[DM_TC_MAIN];
+    dm_android_touch_event(0,0,t.x,t.y); REQUIRE(queue_sample()==DM_BTN_A);
+    REQUIRE(product_down_calls==1 && dm_product_ui_sort(4,91)==4);
+    REQUIRE(dm_product_ui_sort(4,91)==-1);
+    /* requests() may synthesize a mouse DOWN+UP; it must never latch another physical DOWN. */
+    int before_down=product_down_calls;
+    allow_synthetic_touch=1; ++tc.mouse_click_seq; requests(); allow_synthetic_touch=0;
+    REQUIRE(synthetic_touch_calls==2 && product_down_calls==before_down);
+    REQUIRE(queue_sample()==DM_BTN_A && product_down_calls==before_down);
+    dm_android_touch_cancel_pending(); REQUIRE(queue_sample()==0);
+    REQUIRE(product_cancel_calls>0 && dm_product_ui_sort(4,91)==-1);
+    dm_android_touch_event(0,0,t.x,t.y); REQUIRE(queue_sample()==DM_BTN_A);
+    dm_product_ui_scene(5,92); REQUIRE(dm_product_ui_sort(5,92)==-1);
+    dm_android_touch_event(3,0,t.x,t.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_event(0,0,t.x,t.y); REQUIRE(queue_sample()==DM_BTN_A);
+    int before_cancel=product_cancel_calls;
+    dm_android_touch_event(3,0,t.x,t.y); REQUIRE(queue_sample()==0);
+    REQUIRE(product_cancel_calls==before_cancel+1 && dm_product_ui_sort(5,92)==-1);
+}
+static void test_quick_mainstream_geometry_and_margin_binding(void) {
+    const float sizes[][2]={{667,375},{800,375},{852,393},{960,440},{1024,768}};
+    for (unsigned n=0;n<sizeof sizes/sizeof sizes[0];++n) for (int above=0;above<2;++above) for (int large_margin=0;large_margin<2;++large_margin) {
+        fixture(0); scene.game=1; observed_swap_above=above;
+        dm_android_touch_tablet(n==4);
+        dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16); REQUIRE(queue_sample()==0);
+        float a[DM_ANDROID_TOUCH_DRAW_FLOATS], b[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(a);
+        dm_tc_target old_main=tc.layout.target[DM_TC_MAIN];
+        dm_android_touch_margins(large_margin?96:28,large_margin?96:44); REQUIRE(queue_sample()==0); read_twice(b);
+        float shift=tc.layout.target[DM_TC_MAIN].x-old_main.x;
+        for (int i=0;i<3;++i) {
+            int o=DM_ANDROID_TOUCH_QUICK+i*5; dm_tc_target q=quick_circle(i);
+            REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
+            REQUIRE(b[o]==q.x && b[o+1]==q.y && b[o+2]==q.r && b[o+3]==1);
+            REQUIRE(q.x-q.r>=20 && q.x+q.r<=tc.layout.width-24 && q.y-q.r>=0 && q.y+q.r<tc.layout.height-16);
+            for (int t=0;t<DM_TC_COUNT;++t) {
+                dm_tc_target r=tc.layout.target[t];
+                REQUIRE(hypotf(q.x-r.x,q.y-r.y)>q.r+r.r+1);
+            }
+            /* Expanded four-row belt hit rectangles, including upper rows. */
+            float u=tc.layout.height/1320.0f;
+            for (int row=1;row<4;++row) for (int col=0;col<4;++col) {
+                dm_tc_target belt=tc.layout.target[DM_TC_BELT1+col];
+                float bx=belt.x, by=belt.y-(165+162*(row-1))*u;
+                float dx=fmaxf(0,fabsf(q.x-bx)-60*u),dy=fmaxf(0,fabsf(q.y-by)-53.75f*u);
+                REQUIRE(hypotf(dx,dy)>q.r+1);
+            }
+            dm_tc_target swap=tc.layout.swap;
+            REQUIRE(hypotf(q.x-swap.x,q.y-swap.y)>q.r+swap.r+1);
+            REQUIRE(hypotf(q.x-tc.layout.joy_x,q.y-tc.layout.joy_y)>q.r+tc.layout.joy_radius+1);
+            for (int j=i+1;j<3;++j) { dm_tc_target r=quick_circle(j); REQUIRE(hypotf(q.x-r.x,q.y-r.y)>q.r+r.r+1); }
+            quick_tap(i,i);
+            uint64_t expected=i==0 ? DM_BTN_MINUS : i==2 ? DM_BTN_L : 0;
+            REQUIRE(queue_sample()==expected && !tc.finger[i].active && tc.joy_slot<0);
+            REQUIRE(queue_sample()==0);
+        }
+        REQUIRE(map_position_calls==1);
+        printf("DETAIL quick_geometry size=%.0fx%.0f above=%d margin96=%d main=%.2f,%.2f quick=%.2f,%.2f;r=%.2f;dy=%.2f\n",
+            sizes[n][0],sizes[n][1],above,large_margin,tc.layout.target[DM_TC_MAIN].x,tc.layout.target[DM_TC_MAIN].y,
+            b[185],b[186],b[187],b[191]-b[186]);
+    }
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
@@ -674,7 +839,7 @@ static void run_case(const char *name, void (*body)(void)) {
 int main(void) {
     puts("SCOPE native_layout_and_input_bridge; no_Java_Canvas_no_guest_no_save_access");
     run_case("zero_margin_keeps_original_layout", test_zero_margin_keeps_original_layout);
-    run_case("idle_185_abi", test_idle_and_abi);
+    run_case("idle_200_abi", test_idle_and_abi);
     run_case("press_release_multitouch", test_press_release_and_multitouch);
     run_case("slide_cancelled_finger", test_slide_cancel);
     run_case("release_pulse_highlight", test_release_pulse);
@@ -700,6 +865,12 @@ int main(void) {
     run_case("android_item_names_default_and_manual", test_android_item_names_default_and_manual);
     run_case("android_default_names_wait_for_map_action", test_android_default_names_wait_for_map_action);
     run_case("android_default_names_wait_for_loading_and_cursor", test_android_default_names_wait_for_loading_and_cursor);
+    if (!getenv("DM_TEST_QUICK_INPUT_RED")) run_case("quick_snapshot_append", test_quick_snapshot_append);
+    run_case("quick_input_regression", test_quick_input_regression);
+    run_case("quick_feedback_fifo_and_fullmap", test_quick_feedback_fifo_and_fullmap);
+    run_case("quick_slide_up_and_system_cancels", test_quick_slide_up_and_system_cancels);
+    run_case("quick_visibility_and_native_sort_phases", test_quick_visibility_and_native_sort_phases);
+    run_case("quick_mainstream_geometry_and_margin_binding", test_quick_mainstream_geometry_and_margin_binding);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }
