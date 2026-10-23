@@ -33,6 +33,7 @@ static int hud_blocked;
 static touch_event queue[256];
 static unsigned head, tail;
 static int action_queue[256];
+static int action_page[256];
 static unsigned action_head, action_tail;
 static int action_release;
 static uint64_t labels_ready_at;
@@ -100,6 +101,7 @@ static void cancel_locked(void) {
     pulse_hold_start = 0;
     action_head = action_tail = 0; action_release = 0;
     labels_ready_at = 0;
+    dm_inv_sort_touch_cancel();
     memset(direct,0,sizeof direct); selected_point=0; stat_next=skill_add_at=0; map_world_pending=0;
     dm_cursor_clear();
 }
@@ -108,6 +110,7 @@ void dm_android_touch_resize(float w, float h, float l, float r, float b) {
     pthread_mutex_lock(&lock);
     width = w; height = h; safe_left = fmaxf(0,l); safe_right = fmaxf(0,r); safe_bottom = fmaxf(0,b);
     resizing = cancel = 1; head = tail = 0;
+    dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_margins(float left_dp, float right_dp) {
@@ -117,26 +120,38 @@ void dm_android_touch_margins(float left_dp, float right_dp) {
     if (margin_left != left_dp || margin_right != right_dp) {
         margin_left = left_dp; margin_right = right_dp;
         resizing = cancel = 1; head = tail = 0;
+        dm_inv_sort_touch_cancel();
     }
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_tablet(int tablet) {
     pthread_mutex_lock(&lock);
-    tablet_layout = !!tablet; resizing = cancel = 1;
+    tablet_layout = !!tablet; resizing = cancel = 1; dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_action(int action) {
     if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION &&
-        action != DM_ANDROID_ACTION_ITEM_NAMES) return;
+        action != DM_ANDROID_ACTION_ITEM_NAMES && action != DM_ANDROID_ACTION_SORT) return;
     pthread_mutex_lock(&lock);
-    if (focused && ready && scene.game && !frontend && !tc.navigation_mode && action_tail-action_head < 256)
-        action_queue[action_tail++ % 256] = action;
+    int sort = action == DM_ANDROID_ACTION_SORT, page = sort ? dm_ui_sort_context() : -1;
+    if (focused && ready && scene.game && !frontend &&
+        (sort ? tc.navigation_mode && (page == 0 || (page >= 4 && page <= 8)) : !tc.navigation_mode) && action_tail-action_head < 256) {
+        unsigned slot = action_tail++ % 256;
+        action_queue[slot] = action; action_page[slot] = page;
+    }
     pthread_mutex_unlock(&lock);
+}
+int dm_android_touch_sort_context(void) {
+    pthread_mutex_lock(&lock);
+    int page = focused && ready && scene.game && !frontend && tc.navigation_mode ? dm_ui_sort_context() : -1;
+    pthread_mutex_unlock(&lock);
+    return page == 0 || (page >= 4 && page <= 8) ? page : -1;
 }
 void dm_android_touch_cancel_pending(void) {
     pthread_mutex_lock(&lock);
     cancel = 1; head = tail = 0;
     action_head = action_tail = 0; action_release = 0;
+    dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
 int dm_android_touch_gameplay(void) {
@@ -147,7 +162,7 @@ int dm_android_touch_gameplay(void) {
 }
 void dm_android_touch_focus(int active) {
     pthread_mutex_lock(&lock);
-    focused = !!active; cancel = 1; head = tail = 0;
+    focused = !!active; cancel = 1; head = tail = 0; dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_event(int phase, int slot, float x, float y) {
@@ -179,7 +194,7 @@ void dm_android_touch_uimsg(const char *cat, const char *act, const char *arg) {
     int fe = !scene.game && touch_overlay();
     if (fe != frontend) { cancel_locked(); head = tail = 0; frontend = fe; }
     dm_tc_set_navigation_mode(&tc, nav);
-    if (nav || fe) { action_head = action_tail = 0; action_release = 0; }
+    if (fe || (nav && dm_ui_sort_context() < 0)) { action_head = action_tail = 0; action_release = 0; }
     dm_tc_set_joy_block(&tc, !!(dm_ui_panel_state() & DM_PS_TEXT));
     /* 游戏态不要右上地图键（同 iOS front_ios.m navigationMode：点右上角小地图本身就开全屏地图，见 direct_begin）
        No top-right map key in game state (as iOS front_ios.m navigationMode: tapping the top-right minimap itself opens the full map, see direct_begin) */
@@ -406,18 +421,22 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     dm_ui_hand_idle(!active && action_head==action_tail && !action_release &&
                     !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
     int gameplay = scene.game && !frontend && !tc.navigation_mode, dispatched = 0;
-    if (gameplay) {
-        if (!dm_uiscreen_ingame()) labels_ready_at = 0;
-        else if (!labels_ready_at) labels_ready_at = now_ticks;
+    if (!gameplay || !dm_uiscreen_ingame()) labels_ready_at = 0;
+    else if (!labels_ready_at) labels_ready_at = now_ticks;
+    if (scene.game && !frontend) {
         if (action_release) action_release = 0; /* One sampled release between key presses. */
         else if (action_head != action_tail) {
             dispatched = 1;
-            int action = action_queue[action_head++ % 256];
-            if (action == DM_ANDROID_ACTION_MAP_VISIBILITY) {
+            unsigned slot = action_head++ % 256;
+            int action = action_queue[slot];
+            if (action == DM_ANDROID_ACTION_SORT && tc.navigation_mode) {
+                int page = dm_ui_sort_context();
+                if (page == action_page[slot]) dm_inv_sort_touch(page);
+            } else if (action == DM_ANDROID_ACTION_MAP_VISIBILITY && !tc.navigation_mode) {
                 *buttons |= DM_BTN_MINUS;
                 action_release = 1;
-            } else if (action == DM_ANDROID_ACTION_MAP_POSITION) dm_ui_map_cycle_position();
-            else if (action == DM_ANDROID_ACTION_ITEM_NAMES) {
+            } else if (action == DM_ANDROID_ACTION_MAP_POSITION && !tc.navigation_mode) dm_ui_map_cycle_position();
+            else if (action == DM_ANDROID_ACTION_ITEM_NAMES && !tc.navigation_mode) {
                 *buttons |= DM_BTN_L;
                 action_release = 1;
                 labels_done = 1;

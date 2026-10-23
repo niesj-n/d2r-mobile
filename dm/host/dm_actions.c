@@ -65,7 +65,10 @@ void dm_belt_use(int col, int row) { if (col >= 0 && col < 4 && row >= 0 && row 
 void dm_belt_use_merc(int col, int row) { if (col >= 0 && col < 4 && row >= 0 && row < 4) atomic_store(&g_belt_use, 0x100 | (1 + row * 4 + col)); }   // 腰带双击展开后上面几排：手柄没有这几格的键，走下面 g_use 的原版喂雇佣兵分支 | the upper rows after the belt is expanded by double-tap: the controller has no button for these cells, so go through the original game's feed-mercenary branch of g_use below
 static _Atomic int g_use_merc;   // 这一次 g_use 指定喂雇佣兵（腰带双击）：雇佣兵不在 / 已死 / 这瓶不能喂 = 不喂也不自己喝 | this time g_use is designated to feed the mercenary (belt double-tap): mercenary absent / dead / this bottle cannot be fed = neither feed nor drink it oneself
 int dm_belt_rows(int *expanded) { int v = atomic_load(&g_belt_state); if (expanded) *expanded = v >> 8 & 1; return v & 0xff; }
-static _Atomic int g_sort = -1, g_rname;
+static _Atomic int g_sort = -1, g_sort_touch = -1, g_sort_context = -1, g_rname;
+int dm_ui_sort_context(void) { return atomic_load(&g_sort_context); }
+void dm_inv_sort_touch(int token) { if ((token == 0 || (token >= 4 && token <= 8)) && atomic_load(&g_sort_context) == token) atomic_store(&g_sort_touch, token); }
+void dm_inv_sort_touch_cancel(void) { atomic_store(&g_sort_touch, -1); }
 static _Atomic int g_held_equip = -1;
 void dm_held_equip(int bodyloc) { if ((bodyloc & 0xff) > 0 && (bodyloc & 0xff) < 16) atomic_store(&g_held_equip, bodyloc); }   // 低 8 位 = 身体栏位；0x100 = 落点是佣兵面板里的格 | Low 8 bits = body location; 0x100 = the drop point is a cell in the mercenary panel
 void dm_inv_sort(int page) { if (page == 0 || page == 3 || page == 4) atomic_store(&g_sort, page); }
@@ -153,6 +156,24 @@ static uint64_t a_panel(uint64_t root, const char *name) {
     uint64_t ch = *(uint64_t *)(root + 0x58), n = *(uint64_t *)(root + 0x60); if (!ch || n > 256) return 0;
     for (uint64_t i = 0; i < n; i++) { uint64_t p = *(uint64_t *)(ch + 8 * i); const char *nm = p ? *(const char **)(p + 8) : NULL; if (nm && !strcmp(nm, name)) return p; }
     return 0;
+}
+static int sort_context_now(uint64_t root) {
+    if (!root) return -1;
+    static const char *overlay[] = { "VendorPanelLayout", "HoradricCubeLayout", "ImbueItemsPanel" };
+    for (unsigned i = 0; i < sizeof overlay / sizeof *overlay; i++) {
+        uint64_t panel = a_panel(root, overlay[i]); if (panel && *(uint8_t *)(panel + 0x50)) return -1;
+    }
+    uint64_t bank = a_panel(root, "BankExpansionLayout");
+    if (bank && *(uint8_t *)(bank + 0x50)) {
+        uint64_t tabs = a_find(bank, "BankTabs", 0);
+        if (tabs && *(int32_t *)(tabs + 0xdc4) == 0) {
+            int dm_pages_cur(void); int current = dm_pages_cur();
+            return current >= 0 && current < 5 ? 4 + current : -1;
+        }
+        return -1;
+    }
+    uint64_t inv = a_panel(root, "PlayerInventoryExpansionLayout");
+    return inv && *(uint8_t *)(inv + 0x50) ? 0 : -1;
 }
 // 玩家某技能的基础等级：技能链表 [玩家+0x100] → [0] 首节点；节点 [0] → i16 技能号、+0x44 == -1（不是装备给的）、+0x38 等级、+8 下一个（同 0xc36954–0xc369c4）
 // Base level of one of the player's skills: skill linked list [player+0x100] → [0] first node; node [0] → i16 skill id, +0x44 == -1 (not granted by equipment), +0x38 level, +8 next (same as 0xc36954–0xc369c4)
@@ -507,8 +528,10 @@ static void test_bindtbl(uint8_t *b, uint64_t pl) {
     LOG("测试 DM_TEST_BINDTBL：绑定表 [%s]", t);
 }
 void dm_actions_pump(void) {
-    uint8_t *b = ab(); if (!b) return; uint64_t root = *(uint64_t *)(b + 0x2f05458); if (!root) return;
+    uint8_t *b = ab(); if (!b) { atomic_store(&g_sort_context, -1); return; }
+    uint64_t root = *(uint64_t *)(b + 0x2f05458); if (!root) { atomic_store(&g_sort_context, -1); return; }
     uint64_t pl = ((uint64_t (*)(uint32_t))(b + 0x45f9d0))(*(uint32_t *)(b + 0x2d20e4c));
+    atomic_store(&g_sort_context, pl ? sort_context_now(root) : -1);
     // 手上物品的唯一真值（dm_hud.c）：客户端玩家物品栏的光标物品（物品栏 +0x40），它是物品单位（类型 4）且按 id 在客户端单位表里查得回同一个对象才算拿着；否则当作手上空
     // The single source of truth for the held item (dm_hud.c): the cursor item of the client player's inventory (inventory +0x40); it counts as held only if it is an item unit (type 4) and looking it up by id in the client unit table returns the same object; otherwise the hand is treated as empty
     { uint64_t inv = pl ? *(uint64_t *)(pl + 0x90) : 0, held = inv && *(uint32_t *)inv == 0x01020304 ? *(uint64_t *)(inv + 0x40) : 0; uint32_t id = 0;
@@ -577,7 +600,9 @@ void dm_actions_pump(void) {
     // 先过原版的可用判断 main+0x3c213c(属主单位, 页)（手上没拿物品等），不过就不调。已经排好时它自己不发包
     // Sort: main+0x3c2320(owner unit id, container page) -- the end point of the item cell "hold to sort" (controller action button index 4 + long press, 0x3b2e2c–0x3b2ea0): the client computes each item's new position and sends one 0x4e packet for the server to move them.
     // First pass the original availability check main+0x3c213c(owner unit, page) (nothing held in hand, etc.); if it fails, do not call. When already sorted it sends no packet by itself
-    { int sp = atomic_exchange(&g_sort, -1); if (sp >= 0 && pl) { int ok = ((int (*)(uint64_t, int))(b + 0x3c213c))(pl, sp) & 1; if (ok) ((void (*)(uint32_t, int))(b + 0x3c2320))(*(uint32_t *)(pl + 8), sp);
+    { int sp = atomic_exchange(&g_sort, -1), touch = atomic_exchange(&g_sort_touch, -1);
+      if (sp < 0 && touch >= 0 && sort_context_now(root) == touch) sp = touch == 0 ? 0 : 4;
+      if (sp >= 0 && pl) { int ok = ((int (*)(uint64_t, int))(b + 0x3c213c))(pl, sp) & 1; if (ok) ((void (*)(uint32_t, int))(b + 0x3c2320))(*(uint32_t *)(pl + 8), sp);
         LOG("整理：页 %d %s", sp, ok ? "已调原版整理" : "原版判定此刻不能整理（手上拿着物品等），没调"); } }
     // 装备 / 卸下。装备：main+0x3cf394(_, 物品)——物品格手柄「按住确认键」分流里的自动装备（0x3cfc34 → 0x3cf394），它用 0x583b60 选栏位、调 0x3bb24c 发一个直达包（空位 0x56、与已装备的交换 0x59 等）。
     // 先照原版过两步判断：0x583b60(玩家, 物品, &栏位, 1, 0) 与 0x565950(玩家, 栏位, 物品, 1, 0)，不过就只播错误音（0x35f120(3,…)，原版同）。雇佣兵面板开着且他能穿（0x3be960）时改给雇佣兵（0x3bed60），同原版顺序。

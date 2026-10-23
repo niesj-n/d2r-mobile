@@ -19,7 +19,7 @@
 #endif
 #ifndef DM_ANDROID_TOUCH_ACTIONS_AVAILABLE
 enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
-       DM_ANDROID_ACTION_ITEM_NAMES=4 };
+       DM_ANDROID_ACTION_ITEM_NAMES=4, DM_ANDROID_ACTION_SORT=5 };
 #define dm_android_touch_action(action) ((void)(action))
 #endif
 #ifndef DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE
@@ -40,6 +40,7 @@ static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_ca
 static int map_absolute=-1, map_toggles_pending;
 static int observed_idle;
 static int observed_ingame=1, observed_cursor_pending;
+static int sort_context=-1, sort_inventory_calls, sort_personal_calls, sort_cancel_calls, sort_last_token=-1;
 
 #define REQUIRE(expression) do { \
     ++checks; \
@@ -91,6 +92,14 @@ void dm_ui_map_full(int on) { map_absolute=on; ++map_full_calls; }
 void dm_ui_map_toggle(void) { ++map_toggles_pending; ++map_toggle_calls; }
 void dm_ui_map_recenter(void) { ++map_center_calls; }
 void dm_ui_map_cycle_position(void) { ++map_position_calls; }
+int dm_ui_sort_context(void) { return sort_context; }
+void dm_inv_sort_touch(int page) {
+    sort_last_token=page;
+    if (page==0) ++sort_inventory_calls;
+    else if (page>=4 && page<=8) ++sort_personal_calls;
+    else unexpected_host_call(__func__);
+}
+void dm_inv_sort_touch_cancel(void) { ++sort_cancel_calls; }
 int dm_ui_map_geom(float *cell) { *cell=1; return map_mode; }
 static void map_pump(void) {
     if (map_absolute>=0) map_full=map_absolute;
@@ -155,6 +164,7 @@ static void fixture(int navigation) {
     observed_panel=-1; panel_calls=0;
     observed_idle=-1;
     observed_ingame=1; observed_cursor_pending=0;
+    sort_context=-1; sort_inventory_calls=sort_personal_calls=sort_cancel_calls=0; sort_last_token=-1;
     map_full=map_full_calls=map_toggle_calls=map_center_calls=map_position_calls=map_toggles_pending=0;
     map_absolute=-1; map_mode=1;
     dm_tc_set_safe_insets(0, 0); dm_tc_set_edge_bottom(0); dm_tc_set_safe_bottom(0); dm_tc_set_swap_above(0);
@@ -549,6 +559,45 @@ static void test_android_local_cancel_clears_pending_actions(void) {
     REQUIRE(queue_sample()==0 && map_position_calls==2);
 }
 
+static void test_android_sort_only_current_supported_page(void) {
+    fixture(1); scene.game=1;
+    sort_context=0;
+    REQUIRE(dm_android_touch_sort_context()==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    REQUIRE(queue_sample()==0 && sort_inventory_calls==1 && sort_personal_calls==0);
+    sort_context=4;
+    REQUIRE(dm_android_touch_sort_context()==4);
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    REQUIRE(queue_sample()==0 && sort_inventory_calls==1 && sort_personal_calls==1);
+    sort_context=0;
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    sort_context=4; /* The tab changed before the guest consumed the tap. */
+    REQUIRE(queue_sample()==0 && sort_inventory_calls==1 && sort_personal_calls==1);
+    sort_context=5; /* Another personal page, still original container page 4. */
+    REQUIRE(dm_android_touch_sort_context()==5);
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    REQUIRE(queue_sample()==0 && sort_personal_calls==2 && sort_last_token==5);
+    sort_context=4;
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    sort_context=5;
+    REQUIRE(queue_sample()==0 && sort_personal_calls==2); /* Do not sort a newly flipped page. */
+    sort_context=-1; /* Shared, advanced, and other unsupported pages. */
+    REQUIRE(dm_android_touch_sort_context()==-1);
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    REQUIRE(queue_sample()==0 && sort_personal_calls==2);
+    sort_context=4;
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    dm_android_touch_cancel_pending();
+    REQUIRE(sort_cancel_calls>0);
+    REQUIRE(queue_sample()==0 && sort_personal_calls==2);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_VISIBILITY);
+    REQUIRE(queue_sample()==0); /* Gameplay map action stays disabled in a panel. */
+    dm_tc_set_navigation_mode(&tc,0); sort_context=0;
+    REQUIRE(dm_android_touch_sort_context()==-1);
+    dm_android_touch_action(DM_ANDROID_ACTION_SORT);
+    REQUIRE(queue_sample()==0 && sort_inventory_calls==1); /* No stale panel action in gameplay. */
+}
+
 
 static void test_android_full_map_preserves_existing_controls(void) {
     fixture(0); scene.game=1; map_full=1;
@@ -644,6 +693,7 @@ int main(void) {
     run_case("android_map_actions_and_mode_gate", test_android_map_actions_and_mode_gate);
     run_case("android_gameplay_visibility_gate", test_android_gameplay_visibility_gate);
     run_case("android_local_cancel_clears_pending_actions", test_android_local_cancel_clears_pending_actions);
+    run_case("android_sort_only_current_supported_page", test_android_sort_only_current_supported_page);
     run_case("android_full_map_preserves_existing_controls", test_android_full_map_preserves_existing_controls);
     run_case("android_item_names_default_and_manual", test_android_item_names_default_and_manual);
     run_case("android_default_names_wait_for_map_action", test_android_default_names_wait_for_map_action);

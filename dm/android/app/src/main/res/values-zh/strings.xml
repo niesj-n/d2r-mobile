@@ -12,5 +12,8 @@
     <string name="dmAndroidMapPosition">地图位置依次切换左、中、右</string>
     <string name="dmAndroidItemNamesShort">物品名</string>
     <string name="dmAndroidItemNames">显示或隐藏地面物品名称</string>
+    <string name="dmAndroidSortShort">整理</string>
+    <string name="dmAndroidSortBag">整理背包</string>
+    <string name="dmAndroidSortPersonal">整理当前个人仓库页</string>
     <string name="dmAndroidImportLocation">导入包位置：Download/%1$s/android</string>
 </resources>

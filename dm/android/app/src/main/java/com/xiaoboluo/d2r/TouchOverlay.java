@@ -32,13 +32,14 @@ import org.json.JSONArray;
 
 /** 透明悬浮触摸层：与游戏Surface同尺寸，不挤占游戏高度。 | Transparent overlay sharing the game Surface bounds without reducing its height. */
 public final class TouchOverlay extends View {
-    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3, ACTION_ITEM_NAMES=4;
+    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3, ACTION_ITEM_NAMES=4, ACTION_SORT=5;
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
     private static native void nativeAction(int action);
     private static native void nativeCancelPending();
     private static native boolean nativeGameplay();
+    private static native int nativeSortContext();
     private static native void nativeLayout(float[] out);
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -55,8 +56,9 @@ public final class TouchOverlay extends View {
             if (inputEnabled && isShown()) {
                 nativeLayout(probe);
                 publishGameplay(nativeGameplay());
+                publishSortContext(nativeSortContext());
                 if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
-            } else publishGameplay(false);
+            } else { publishGameplay(false); publishSortContext(-1); }
             Choreographer.getInstance().postFrameCallback(this);
         }
     };
@@ -77,7 +79,10 @@ public final class TouchOverlay extends View {
     private float safeLeft, safeRight, safeBottom;
     private int marginLeft, marginRight;
     public interface GameplayListener { void changed(boolean gameplay); }
+    public interface SortListener { void changed(int page); }
     private GameplayListener gameplayListener;
+    private SortListener sortListener;
+    private int sortContext=-1;
     private boolean running, inputEnabled, gameplay;
 
     public void setGameplayListener(GameplayListener listener) {
@@ -89,8 +94,20 @@ public final class TouchOverlay extends View {
         gameplay=value;
         if (gameplayListener!=null) gameplayListener.changed(value);
     }
+    public void setSortListener(SortListener listener) {
+        sortListener=listener;
+        if (listener!=null) listener.changed(sortContext);
+    }
+    private void publishSortContext(int page) {
+        if (sortContext==page) return;
+        sortContext=page;
+        if (sortListener!=null) sortListener.changed(page);
+    }
     public void sendGameplayAction(int action) {
         if (inputEnabled && gameplay) nativeAction(action);
+    }
+    public void sendSortAction() {
+        if (inputEnabled && (sortContext==0 || (sortContext>=4 && sortContext<=8))) nativeAction(ACTION_SORT);
     }
 
     public ToolbarButton toolbarButton(int label, int description, boolean mapIcon, Runnable onClick) {
@@ -197,7 +214,7 @@ public final class TouchOverlay extends View {
     /** 仅在libdm加载且guest启动成功后开启；暂停时先取消触点。 | Enable only after libdm loads and the guest starts; disabling cancels first. */
     public void setInputEnabled(boolean enabled) {
         if (inputEnabled==enabled) return;
-        if (!enabled) { cancelTouches(); publishGameplay(false); }
+        if (!enabled) { cancelTouches(); publishGameplay(false); publishSortContext(-1); }
         inputEnabled=enabled;
         for (ToolbarButton button : toolbarButtons) button.invalidate();
         drawnValid=false; invalidate();
@@ -224,7 +241,7 @@ public final class TouchOverlay extends View {
         super.onAttachedToWindow(); running=true; drawnValid=false; invalidate(); Choreographer.getInstance().postFrameCallback(poll);
     }
     @Override protected void onDetachedFromWindow() {
-        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); publishGameplay(false); super.onDetachedFromWindow();
+        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); publishGameplay(false); publishSortContext(-1); super.onDetachedFromWindow();
     }
     public void cancelTouches() {
         if (!inputEnabled) { Arrays.fill(pointerIds,-1); return; }

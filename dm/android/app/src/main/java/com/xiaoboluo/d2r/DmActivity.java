@@ -65,6 +65,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private TouchOverlay touchOverlay;
     private PerformanceOverlay performanceOverlay;
     private TouchOverlay.ToolbarButton touchSettingsButton;
+    private TouchOverlay.ToolbarButton sortButton;
     private LinearLayout touchToolbar;
     private final TouchOverlay.ToolbarButton[] gameplayActions = new TouchOverlay.ToolbarButton[3];
     private int safeToolbarLeft, safeToolbarRight, safeToolbarTop;
@@ -155,6 +156,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
                 getResources().getDisplayMetrics().density);
         for (TouchOverlay.ToolbarButton button : gameplayActions) if (button != null && button.getLayoutParams().width != cell)
             button.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
+        if (sortButton != null && sortButton.getLayoutParams().width != cell)
+            sortButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
         if (touchSettingsButton != null && touchSettingsButton.getLayoutParams().width != cell)
             touchSettingsButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
         FrameLayout.LayoutParams placement = (FrameLayout.LayoutParams) touchToolbar.getLayoutParams();
@@ -374,6 +377,10 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
                 gameplayActions[i].setVisibility(View.GONE);
                 touchToolbar.addView(gameplayActions[i], new LinearLayout.LayoutParams(dp(48), dp(48)));
             }
+            sortButton = touchOverlay.toolbarButton(R.string.dmAndroidSortShort,
+                    R.string.dmAndroidSortBag, false, touchOverlay::sendSortAction);
+            sortButton.setVisibility(View.GONE);
+            touchToolbar.addView(sortButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
             touchSettingsButton = touchOverlay.toolbarButton(R.string.dmAndroidTouchSettingsShort,
                     R.string.dmAndroidTouchSettings, false, this::showTouchSettings);
             touchToolbar.addView(touchSettingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -382,6 +389,11 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             gameFrame.addView(touchToolbar, toolbarPlacement);
             touchOverlay.setGameplayListener(gameplay -> {
                 for (TouchOverlay.ToolbarButton action : gameplayActions) action.setVisibility(gameplay ? View.VISIBLE : View.GONE);
+                layoutTouchToolbar();
+            });
+            touchOverlay.setSortListener(page -> {
+                sortButton.setVisibility(page == 0 || (page >= 4 && page <= 8) ? View.VISIBLE : View.GONE);
+                sortButton.setContentDescription(getString(page >= 4 ? R.string.dmAndroidSortPersonal : R.string.dmAndroidSortBag));
                 layoutTouchToolbar();
             });
             layoutTouchToolbar();

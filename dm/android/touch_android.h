@@ -9,8 +9,9 @@ void dm_android_touch_tablet(int tablet);
 void dm_android_touch_margins(float left_dp, float right_dp);
 #define DM_ANDROID_TOUCH_ACTIONS_AVAILABLE 1
 enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
-       DM_ANDROID_ACTION_ITEM_NAMES=4 };
+       DM_ANDROID_ACTION_ITEM_NAMES=4, DM_ANDROID_ACTION_SORT=5 };
 void dm_android_touch_action(int action);
+int dm_android_touch_sort_context(void);  // 0背包、4..8个人仓库页快照，其他-1 | Inventory or personal-page snapshot, else -1
 #define DM_ANDROID_TOUCH_CANCEL_PENDING_AVAILABLE 1
 void dm_android_touch_cancel_pending(void);
 #define DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE 1
