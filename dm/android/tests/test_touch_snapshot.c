@@ -25,6 +25,9 @@ enum { DM_ANDROID_ACTION_RUN=1, DM_ANDROID_ACTION_MAP_VISIBILITY=2,
 #ifndef DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE
 #define dm_android_touch_gameplay() (0)
 #endif
+#ifndef DM_ANDROID_TOUCH_CANCEL_PENDING_AVAILABLE
+#define dm_android_touch_cancel_pending() ((void)0)
+#endif
 
 _Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 185, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
@@ -540,6 +543,27 @@ static void test_android_gameplay_visibility_gate(void) {
     REQUIRE(!dm_android_touch_gameplay());
 }
 
+/* Activity.releaseTouches -> TouchOverlay.cancelTouches must clear queued
+   toolbar actions even when a dialog or shade does not pause the Activity. */
+static void test_android_local_cancel_clears_pending_actions(void) {
+    fixture(0); scene.game=1;
+    dm_android_touch_action(DM_ANDROID_ACTION_RUN);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_VISIBILITY);
+    dm_android_touch_cancel_pending();
+    REQUIRE(queue_sample()==0 && action_head==action_tail);
+    REQUIRE(focused==1);
+    dm_android_touch_action(DM_ANDROID_ACTION_RUN);
+    REQUIRE((queue_sample()&DM_BTN_LS)!=0);
+    REQUIRE((queue_sample()&DM_BTN_LS)==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_VISIBILITY);
+    REQUIRE((queue_sample()&DM_BTN_MINUS)!=0);
+    dm_android_touch_action(DM_ANDROID_ACTION_RUN);
+    dm_android_touch_cancel_pending();
+    REQUIRE(queue_sample()==0 && action_release==0 && action_head==action_tail);
+    dm_android_touch_action(DM_ANDROID_ACTION_RUN);
+    REQUIRE((queue_sample()&DM_BTN_LS)!=0);
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
@@ -567,6 +591,7 @@ int main(void) {
     run_case("android_action_edges_are_not_merged", test_android_action_edges_are_not_merged);
     run_case("android_map_actions_and_mode_gate", test_android_map_actions_and_mode_gate);
     run_case("android_gameplay_visibility_gate", test_android_gameplay_visibility_gate);
+    run_case("android_local_cancel_clears_pending_actions", test_android_local_cancel_clears_pending_actions);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }

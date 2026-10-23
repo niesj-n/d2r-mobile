@@ -11,6 +11,8 @@ void dm_android_touch_margins(float left_dp, float right_dp);
 enum { DM_ANDROID_ACTION_RUN=1, DM_ANDROID_ACTION_MAP_VISIBILITY=2,
        DM_ANDROID_ACTION_MAP_SIZE=3, DM_ANDROID_ACTION_MAP_CENTER=4 };
 void dm_android_touch_action(int action);
+#define DM_ANDROID_TOUCH_CANCEL_PENDING_AVAILABLE 1
+void dm_android_touch_cancel_pending(void);
 #define DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE 1
 int dm_android_touch_gameplay(void);
 /* phase: 0 down, 1 move, 2 up, 3 cancel; slot: stable 0..15; coordinates in dp. | 阶段：按下/移动/抬起/取消；槽固定0..15；坐标dp。 */

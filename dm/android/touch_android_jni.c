@@ -19,6 +19,10 @@ JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeAction(JNIEnv *
     (void)env; (void)cls;
     dm_android_touch_action(action);
 }
+JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeCancelPending(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    dm_android_touch_cancel_pending();
+}
 JNIEXPORT jboolean JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeGameplay(JNIEnv *env, jclass cls) {
     (void)env; (void)cls;
     return dm_android_touch_gameplay();

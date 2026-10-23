@@ -125,6 +125,12 @@ void dm_android_touch_action(int action) {
         action_queue[action_tail++ % 256] = action;
     pthread_mutex_unlock(&lock);
 }
+void dm_android_touch_cancel_pending(void) {
+    pthread_mutex_lock(&lock);
+    cancel = 1; head = tail = 0;
+    action_head = action_tail = 0; action_release = 0;
+    pthread_mutex_unlock(&lock);
+}
 int dm_android_touch_gameplay(void) {
     pthread_mutex_lock(&lock);
     int gameplay = focused && ready && scene.game && !frontend && !tc.navigation_mode;

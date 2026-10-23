@@ -36,6 +36,7 @@ public final class TouchOverlay extends View {
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
     private static native void nativeAction(int action);
+    private static native void nativeCancelPending();
     private static native boolean nativeGameplay();
     private static native void nativeLayout(float[] out);
     private final float density;
@@ -156,6 +157,7 @@ public final class TouchOverlay extends View {
             nativeEvent(3,i,lastX[i],lastY[i]); pointerIds[i]=-1;
         }
         publishRaw();
+        nativeCancelPending();
     }
     private void publishRaw() {
         int count=0;
