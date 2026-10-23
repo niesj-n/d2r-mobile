@@ -50,10 +50,10 @@ for voice in (False, True):
         assert fields["textString"] == "@dmCustomDriverSettings"
         assert fields["onClickMessage"] == "PanelManager:ClosePanel:TouchDriverSettings"
         assert fields["filename"] == "FrontEnd\\HD\\Final\\FrontEnd_ButtonMed"
-        last_key = nodes["TouchCustom_perf_overlay_Text"]["fields"]["rect"]
+        last_key = nodes["TouchCustom_perf_transparency_Text"]["fields"]["rect"]
         assert fields["rect"]["y"] >= last_key["y"] + last_key["height"]
         assert fields["rect"]["y"] + 100 <= nodes["TouchCustomRows"]["fields"]["rect"]["height"]
-        assert layout._CUSTOM_KEYS[-3:] == ("touch_margin_left", "touch_margin_right", "perf_overlay")
+        assert layout._CUSTOM_KEYS[-5:] == ("touch_margin_left", "touch_margin_right", "perf_overlay", "perf_font_size", "perf_transparency")
 row = next(row for row in dm_i18n.rows() if row[0] == "dmCustomDriverSettings")
 assert all(row[1:])
 print("PASS Android-only native driver manager button, scroll extent, unchanged setting keys and all localized labels")

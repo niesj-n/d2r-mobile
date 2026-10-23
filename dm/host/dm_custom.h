@@ -20,6 +20,10 @@ void dm_custom_android_seed_legacy(int left, int right, int monitor);
 // UI-thread safe, no load/IO: returns 0 before native load, otherwise fills
 // {left logical points, right logical points, monitor} from one applied snapshot.
 int dm_custom_android_read_applied(int out[3]);
+// UI-thread safe, no load/IO: {font size 8..14 sp, background transparency
+// 0..80 percent}, default {9,45}; 0 is opaque, 80 is more transparent.
+// Reads one coherent packed applied snapshot; returns 0 before native load.
+int dm_custom_android_read_monitor_style(int out[2]);
 // Input-thread safe: queue parity only (no IO/JNI/guest access). The next host
 // UI pump toggles and saves canonical loot_filter without applying other keys.
 void dm_custom_android_request_loot_filter_toggle(void);

@@ -57,3 +57,12 @@ JNIEXPORT jboolean JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeReadSetting
     (*env)->SetIntArrayRegion(env, dst, 0, 3, data);
     return JNI_TRUE;
 }
+JNIEXPORT jboolean JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeReadMonitorStyle(JNIEnv *env, jclass cls, jintArray dst) {
+    (void)cls;
+    if (!dst || (*env)->GetArrayLength(env, dst) < 2) return JNI_FALSE;
+    int values[2];
+    if (!dm_custom_android_read_monitor_style(values)) return JNI_FALSE;
+    jint data[2] = {values[0], values[1]};
+    (*env)->SetIntArrayRegion(env, dst, 0, 2, data);
+    return JNI_TRUE;
+}

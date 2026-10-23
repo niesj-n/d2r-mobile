@@ -463,3 +463,5 @@ dmHudMapPosition	位置	Position	Posición		Позиция	위치	游戏HUD地�
 dmHudItemNames	物品名	Items	Objetos		Предметы	아이템	游戏HUD物品名称按钮
 dmPanelSort	整理	Sort	Ordenar		Сортировка	정렬	游戏背包及个人仓库整理按钮
 dmCustomDriverSettings	第三方驱动管理	Driver settings	Controladores		Настройки драйверов	드라이버 설정	安卓自定义页驱动管理按钮，仅打开管理器，不应用其他待定设置
+dmCustomPerfFontSize	性能悬浮窗字号	Monitor font size	Tamaño de letra del monitor		Размер шрифта монитора	성능 모니터 글꼴 크기	Android performance overlay font size, 8 to 14 sp, default 9
+dmCustomPerfTransparency	背景透明度（%）	Background transparency (%)	Transparencia del fondo (%)		Прозрачность фона (%)	배경 투명도 (%)	Android performance background transparency 0 to 80 percent, default 45

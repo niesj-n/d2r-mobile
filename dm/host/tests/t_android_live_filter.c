@@ -33,6 +33,7 @@ int main(int argc,char **argv) {
     atomic_store(&g_pend[other],0);atomic_store(&g_pend[filter],1);
     atomic_store(&g_pend[K_RENDER],8);atomic_store(&g_pend[K_ECO],1);
     atomic_store(&g_pend[K_MARGIN_LEFT],37);atomic_store(&g_pend[K_PERF],1);
+    atomic_store(&g_pend[K_PERF_FONT],14);atomic_store(&g_pend[K_PERF_TRANSPARENCY],80);
     int before_pending[NK],before_applied[NK];
     for(int i=0;i<NK;i++) { before_pending[i]=atomic_load(&g_pend[i]);before_applied[i]=atomic_load(&g_val[i]); }
     shortcut();shortcut();dm_custom_ui_pump(0);assert(dm_custom_get("loot_filter")==0);

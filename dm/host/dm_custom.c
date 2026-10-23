@@ -46,7 +46,7 @@ static const char *const k_keys[] = { "lang",
 #endif
     "loot_filter", "auto_buff", "touch_swap_above"
 #ifdef __ANDROID__
-    , "touch_margin_left", "touch_margin_right", "perf_overlay"
+    , "touch_margin_left", "touch_margin_right", "perf_overlay", "perf_font_size", "perf_transparency"
 #endif
 };   // 顺序 = 自定义页从上到下的行序（touch_layout.py _CUSTOM_ROWS）：手柄在这页按这个顺序上下选行 | Order = row order of the Custom page from top to bottom (touch_layout.py _CUSTOM_ROWS): the controller selects rows up/down on this page in this order
 #define NK (int)(sizeof k_keys / sizeof *k_keys)
@@ -62,7 +62,7 @@ static const int k_def[NK] = { 0,
 #endif
     1, 1, 0
 #ifdef __ANDROID__
-    , 0, 0, 0
+    , 0, 0, 0, 9, 45
 #endif
 };   // Android render scale defaults to .85; other platforms retain q3d=0.
 // q3d（3D 画质）：0 = 流畅优先（掉帧就自动降 3D 比例）、1 = 画质优先（不自动降）。生效 = 调 hle_oe.c 的 dm_3d_quality_mode_set，读盘与点「应用」时当场调，下一帧控制器就按新档走。
@@ -80,6 +80,8 @@ static const int k_def[NK] = { 0,
 #define K_MARGIN_LEFT (17 + VOICE_ROW)
 #define K_MARGIN_RIGHT (18 + VOICE_ROW)
 #define K_PERF (19 + VOICE_ROW)
+#define K_PERF_FONT (20 + VOICE_ROW)
+#define K_PERF_TRANSPARENCY (21 + VOICE_ROW)
 #else
 #define K_RENDER -2
 #define K_DYNAMIC -2
@@ -110,7 +112,9 @@ static void android_publish_applied(void) {
     unsigned left = (unsigned)atomic_load(&g_val[K_MARGIN_LEFT]);
     unsigned right = (unsigned)atomic_load(&g_val[K_MARGIN_RIGHT]);
     unsigned monitor = (unsigned)atomic_load(&g_val[K_PERF]);
-    atomic_store(&g_android_applied, left | (right << 7) | (monitor << 14));
+    unsigned font = (unsigned)atomic_load(&g_val[K_PERF_FONT]);
+    unsigned transparency = (unsigned)atomic_load(&g_val[K_PERF_TRANSPARENCY]);
+    atomic_store(&g_android_applied, left | (right << 7) | (monitor << 14) | (font << 15) | (transparency << 19));
 }
 int dm_custom_android_read_applied(int out[3]) {
     if (!out || !atomic_load(&g_loaded)) return 0;
@@ -118,12 +122,28 @@ int dm_custom_android_read_applied(int out[3]) {
     out[0] = (int)(snapshot & 127); out[1] = (int)((snapshot >> 7) & 127); out[2] = (int)((snapshot >> 14) & 1);
     return 1;
 }
-static int android_selector(int i) { return i == K_RENDER || i == K_ECO || i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT; }
-static int android_margin(int i) { return i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT; }
+int dm_custom_android_read_monitor_style(int out[2]) {
+    if (!out || !atomic_load(&g_loaded)) return 0;
+    unsigned snapshot = atomic_load(&g_android_applied);
+    out[0] = (int)((snapshot >> 15) & 15); out[1] = (int)((snapshot >> 19) & 127);
+    return 1;
+}
+static int android_slider(int i) { return i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT || i == K_PERF_FONT || i == K_PERF_TRANSPARENCY; }
+static int android_slider_min(int i) { return i == K_PERF_FONT ? 8 : 0; }
+static int android_slider_max(int i) { return i == K_PERF_FONT ? 14 : i == K_PERF_TRANSPARENCY ? 80 : 96; }
+static int android_slider_clamp(int i, int value) { int lo = android_slider_min(i), hi = android_slider_max(i); return value < lo ? lo : value > hi ? hi : value; }
+static int android_selector(int i) { return i == K_RENDER || i == K_ECO || android_slider(i); }
 static int android_selector_step(int i, int current, int direction) {
     if (i == K_RENDER) return dm_android_render_scale_step(current, direction);
     if (i == K_ECO) return dm_android_fps_step(current, direction);
-    return margin_clamp(current + direction);
+    return android_slider_clamp(i, current + direction);
+}
+static int android_style_parse(const char *s, int i) {
+    if (*s < '0' || *s > '9') return k_def[i];
+    char *end; long value = strtol(s, &end, 10);
+    if (*end == '\r') end++;
+    if (*end == '\n') end++;
+    return !*end && value >= android_slider_min(i) && value <= android_slider_max(i) ? (int)value : k_def[i];
 }
 #endif
 // lang（语言开关，自定义页第一行）：五项单选 0 中文 / 1 English / 2 Español / 3 Русский / 4 한국어（勾选框 TouchCustom_lang_zh / _en / _es / _ru / _ko 互斥）。它不是功能开关，生效方式不同——
@@ -172,7 +192,7 @@ static void load_once(void) {
     int lang = -1, voice = -1, merc = -1;
     while (f && fgets(ln, sizeof ln, f)) { char *eq = strchr(ln, '='); if (!eq) continue; *eq = 0; int i = key_index(ln); if (i > 0 && i != K_RENDER && i != K_DYNAMIC
 #ifdef __ANDROID__
-        && i != K_ECO && i != K_MARGIN_LEFT && i != K_MARGIN_RIGHT && i != K_PERF
+        && i != K_ECO && !android_slider(i) && i != K_PERF
 #endif
         ) v[i] = eq[1] != '0';
 #ifdef __ANDROID__
@@ -181,6 +201,7 @@ static void load_once(void) {
             v[i] = k_def[i]; char *end; long x = strtol(eq + 1, &end, 10);
             if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x <= (i == K_PERF ? 1 : 96)) v[i] = (int)x;
         }
+        if (i == K_PERF_FONT || i == K_PERF_TRANSPARENCY) v[i] = android_style_parse(eq + 1, i);
         if (i == K_ECO) { char *end; long x = strtol(eq + 1, &end, 10);
             if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x <= 5) v[i] = (int)x; }
         if (i == K_RENDER) { char *end; long x = strtol(eq + 1, &end, 10);
@@ -272,6 +293,7 @@ void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
             if (i == 0) atomic_store(&g_lang_explicit, pd); if (i == K_VOICE) atomic_store(&g_voice_explicit, pd); if (i == K_MERC) atomic_store(&g_merc_explicit, pd); if (i == 0) LOG("自定义设置：语言 → %s（应用；下次启动生效）", k_lang_name[pd]); else if (i == K_VOICE) LOG("自定义设置：配音 → %s（应用；下次启动生效）", pd ? "English" : "中文");
 #ifdef __ANDROID__
             else if (i == K_ECO) LOG("自定义设置：目标帧率 → %d FPS（应用）", dm_android_fps_value(pd));
+            else if (i == K_PERF_FONT || i == K_PERF_TRANSPARENCY) LOG("自定义设置：%s → %d（应用）", k_keys[i], pd);
             else if (i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT) LOG("自定义设置：%s → %d 逻辑点（应用）", k_keys[i], pd);
 #endif
             else if (i != K_RENDER) LOG("自定义设置：%s → %s（应用）", k_keys[i], pd ? "开" : "关"); } }
@@ -313,17 +335,18 @@ static void set_toggle(uint64_t w, int on) {
  * Use that setter with both notification flags false when restoring pending
  * state. The unmodified dm_cursor horizontal drag uses native hit tests and
  * mouse input; its normal setter updates are read by this page's pump. */
-static void margin_slider_set(uint8_t *b, uint64_t w, int value) {
-    if (!DM_WIDGET_OK(b, w, DM_VT_SETTINGS_SLIDER, "边距滑块")) return;
-    int reset_range = *(int32_t *)(w + 0x5bc) != 0 || *(int32_t *)(w + 0x5c0) != 96 || *(int32_t *)(w + 0x5b8) != 96;
-    value = margin_clamp(value);
-    *(int32_t *)(w + 0x5bc) = 0;
-    *(int32_t *)(w + 0x5c0) = *(int32_t *)(w + 0x5b8) = 96;
+static void custom_slider_set(uint8_t *b, uint64_t w, int i, int value) {
+    if (!DM_WIDGET_OK(b, w, DM_VT_SETTINGS_SLIDER, "自定义滑块")) return;
+    int lo = android_slider_min(i), hi = android_slider_max(i);
+    int reset_range = *(int32_t *)(w + 0x5bc) != lo || *(int32_t *)(w + 0x5c0) != hi || *(int32_t *)(w + 0x5b8) != hi;
+    value = android_slider_clamp(i, value);
+    *(int32_t *)(w + 0x5bc) = lo;
+    *(int32_t *)(w + 0x5c0) = *(int32_t *)(w + 0x5b8) = hi;
     /* The constructor centers the indicator while current starts at zero.
      * The setter returns early for an unchanged value: force a silent move
      * when changing the range, so a zero default is drawn at the left end. */
     void (*set)(uint64_t, int, int, int) = (void (*)(uint64_t, int, int, int))(b + 0xad7028);
-    if (reset_range && *(int32_t *)(w + 0x5c4) == value) set(w, value == 0 ? 96 : 0, 0, 0);
+    if (reset_range && *(int32_t *)(w + 0x5c4) == value) set(w, value == lo ? hi : lo, 0, 0);
     set(w, value, 0, 0);
 }
 static void selector_text(uint8_t *b, uint64_t w, const char *text) {
@@ -384,13 +407,13 @@ void dm_custom_ui_pump(unsigned long long root) {
           if (ev & DM_BTN_DOWN) sel = sel + 1 < NK ? sel + 1 : sel; else if (ev & DM_BTN_UP) sel = sel > 0 ? sel - 1 : 0;
           snprintf(nm, sizeof nm, "TouchCustom_%s", k_keys[sel]); cw = find_w(sp, sel == 0 ? k_lang_box[LANG_N - 1] : nm, 0); snprintf(nm, sizeof nm, "TouchCustom_%s_Text", k_keys[sel]); tw = find_w(sp, nm, 0);   // 语言行：框住标签到最右那一格 | Language row: box from the label to the rightmost cell
 #ifdef __ANDROID__
-          if (android_selector(sel)) { if (!android_margin(sel)) { snprintf(nm, sizeof nm, "TouchCustom_%s_next", k_keys[sel]); cw = find_w(sp, nm, 0); }
+          if (android_selector(sel)) { if (!android_slider(sel)) { snprintf(nm, sizeof nm, "TouchCustom_%s_next", k_keys[sel]); cw = find_w(sp, nm, 0); }
               int dir = (ev & DM_BTN_LEFT) ? -1 : (ev & (DM_BTN_RIGHT | DM_BTN_A)) ? 1 : 0;
               if (dir) { int pd = atomic_load(&g_pend[sel]);
                   int current = pd >= 0 ? pd : atomic_load(&g_val[sel]);
                   int next = sel == K_ECO ? (dir < 0 ? 1 : 0) : android_selector_step(sel, current, dir);
                   atomic_store(&g_pend[sel], next);
-                  if (android_margin(sel)) margin_slider_set(main_base(), cw, next); } }
+                  if (android_slider(sel)) custom_slider_set(main_base(), cw, sel, next); } }
 #endif
           if ((ev & DM_BTN_A) && cw && dm_wref_get(&seen[sel]) == cw) {
 #ifdef __ANDROID__
@@ -424,14 +447,14 @@ void dm_custom_ui_pump(unsigned long long root) {
           for (int k = 0; k < LANG_N; k++) if (TOGGLED(bx[k]) != (k == to)) set_toggle(bx[k], k == to); } }
     for (int i = 1; i < NK; i++) {
 #ifdef __ANDROID__
-        if (android_margin(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s", k_keys[i]); uint64_t slider = find_w(sp, name, 0);
-            if (!slider || !*(uint8_t *)(slider + 0x50) || !DM_WIDGET_OK(main_base(), slider, DM_VT_SETTINGS_SLIDER, "边距滑块")) continue;
+        if (android_slider(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s", k_keys[i]); uint64_t slider = find_w(sp, name, 0);
+            if (!slider || !*(uint8_t *)(slider + 0x50) || !DM_WIDGET_OK(main_base(), slider, DM_VT_SETTINGS_SLIDER, "自定义滑块")) continue;
             int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);
-            if (dm_wref_get(&seen[i]) != slider) { margin_slider_set(main_base(), slider, shown); dm_wref_set(&seen[i], slider); }
-            else { int current = margin_clamp(*(int32_t *)(slider + 0x5c4));
+            if (dm_wref_get(&seen[i]) != slider) { custom_slider_set(main_base(), slider, i, shown); dm_wref_set(&seen[i], slider); }
+            else { int current = android_slider_clamp(i, *(int32_t *)(slider + 0x5c4));
                 if (current != shown) { shown = current; atomic_store(&g_pend[i], current); } }
             snprintf(name, sizeof name, "TouchCustom_%s_value", k_keys[i]); uint64_t value = find_w(sp, name, 0);
-            char text[20]; snprintf(text, sizeof text, "%d", shown); if (value) selector_text(main_base(), value, text);
+            char text[20]; snprintf(text, sizeof text, i == K_PERF_TRANSPARENCY ? "%d%%" : "%d", shown); if (value) selector_text(main_base(), value, text);
             continue; }
         if (android_selector(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s_value", k_keys[i]); uint64_t value = find_w(sp, name, 0);
             int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);

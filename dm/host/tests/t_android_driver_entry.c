@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
     assert(argc == 2); assert(test_mkdir(argv[1]) == 0); dm_custom_init(argv[1]);
     open_driver(); assert(requests == 1);
     assert(!atomic_load(&g_loaded)); /* The action does not load/save settings. */
-    assert(NK == 20 + VOICE_ROW && K_PERF == 19 + VOICE_ROW);
+    assert(NK == 22 + VOICE_ROW && K_PERF == 19 + VOICE_ROW);
     assert(key_index("TouchDriverSettings") == -1 && key_index("driver_settings") == -1);
     dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchDriverSettingsExtra");
     dm_custom_on_uimsg("PanelManager", "AcceptChanges", "TouchDriverSettings");

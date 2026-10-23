@@ -22,8 +22,8 @@ for voice in (False, True):
     assert not set(added).intersection(original)
     os.environ["DM_ANDROID_PRODUCT"] = "1"
     layout = importlib.reload(layout)
-    assert layout._CUSTOM_KEYS[-3:] == added
-    assert layout._CUSTOM_KEYS[:-3] == tuple(new for key in original for new in (("render_scale", "render_dynamic") if key == "q3d" else (key,)))
+    assert layout._CUSTOM_KEYS[-5:-2] == added
+    assert layout._CUSTOM_KEYS[:-5] == tuple(new for key in original for new in (("render_scale", "render_dynamic") if key == "q3d" else (key,)))
     raw, _ = layout._custom_page('"name": "VideoOptionsPanel", "name": "OptionsTable"')
     page = json.loads(re.sub(r",\s*([}\]])", r"\1", raw))
     nodes = {}
