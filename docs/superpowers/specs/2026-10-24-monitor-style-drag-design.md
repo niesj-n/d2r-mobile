@@ -2,7 +2,7 @@
 
 Authorized scope: extend the installed v2.4 monitor with smaller default text, adjustable background transparency, direct dragging and remembered placement. Original reference is `jhaizhou-ops/d2r-mobile` at `e3756f8`; implementation base is `44c7b1e`.
 
-Default font is 9 (range 8–14). Transparency is 45 (range 0–80), with alpha equal to `1 - transparency / 100`. Only the background and border fade. Panel dimensions, text and internal padding scale from the former 11-font layout; the safe left 10 dp and top 48 dp reservation remain. Sampling retains its cached 500 ms cadence.
+Default font is 9 (range 8–14). Transparency is 45 (range 0–80), with alpha equal to `1 - transparency / 100`. Only the background and border fade. Panel dimensions, text and internal padding scale from the former 11-font layout. Initial unsaved placement keeps left 10 dp and top 48 dp offsets; manual dragging and normalized restoration reach the actual safe-area edges without these offsets. Sampling retains its cached 500 ms cadence.
 
 The monitor is the topmost, panel-sized child of the game FrameLayout. FrameLayout splits pointer events, so a finger outside the panel reaches TouchOverlay even during a monitor drag. The first pointer starting inside owns the drag; secondary pointers never replace it. UP saves normalized available-travel coordinates to dedicated `performance_overlay_position` Android preferences. CANCEL, hide, detach and loss of focus release ownership. Size, insets and font changes clamp the panel and restore the normalized placement.
 

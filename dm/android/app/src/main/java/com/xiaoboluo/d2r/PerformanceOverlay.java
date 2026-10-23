@@ -107,8 +107,9 @@ public final class PerformanceOverlay extends View {
         super(context);
         density = getResources().getDisplayMetrics().density;
         positionPreferences = context.getSharedPreferences("performance_overlay_position", Context.MODE_PRIVATE);
-        position.restore(positionPreferences.getFloat("normalized_x", 0),
-                positionPreferences.getFloat("normalized_y", 0));
+        if (positionPreferences.contains("normalized_x") && positionPreferences.contains("normalized_y"))
+            position.restore(positionPreferences.getFloat("normalized_x", 0),
+                    positionPreferences.getFloat("normalized_y", 0));
         title = context.getString(R.string.performance_title);
         int[] ids = {R.string.performance_fps, R.string.performance_frame, R.string.performance_gpu,
                 R.string.performance_scale, R.string.performance_dimensions, R.string.performance_battery};
@@ -294,10 +295,12 @@ final class PerformancePanelState {
     float left, top, width, height;
     float normalizedX, normalizedY;
     boolean gestureOwned;
+    private boolean hasPosition;
     private float minLeft, minTop, travelX, travelY, grabX, grabY;
     private int primaryPointer = -1;
 
     void restore(float x, float y) {
+        hasPosition = Float.isFinite(x) && Float.isFinite(y);
         normalizedX = normalized(x);
         normalizedY = normalized(y);
     }
@@ -306,19 +309,23 @@ final class PerformancePanelState {
                 float safeRight, float safeBottom, float density, int fontSize) {
         float usableWidth = Math.max(0, containerWidth - safeLeft - safeRight);
         float usableHeight = Math.max(0, containerHeight - safeTop - safeBottom);
-        float horizontalPadding = Math.min(10 * density, usableWidth / 2);
-        minLeft = safeLeft + horizontalPadding;
-        minTop = safeTop + Math.min(48 * density, usableHeight / 2);
-        float availableWidth = Math.max(0, usableWidth - 2 * horizontalPadding);
-        float availableHeight = Math.max(0, containerHeight - safeBottom
-                - Math.min(4 * density, usableHeight / 2) - minTop);
+        minLeft = safeLeft;
+        minTop = safeTop;
         float scale = density * Math.max(8, Math.min(14, fontSize)) / 11f;
-        width = (float) Math.floor(Math.min(284 * scale, availableWidth));
-        height = (float) Math.floor(Math.min(164 * scale, availableHeight));
-        travelX = Math.max(0, availableWidth - width);
-        travelY = Math.max(0, availableHeight - height);
-        left = minLeft + normalizedX * travelX;
-        top = minTop + normalizedY * travelY;
+        width = (float) Math.floor(Math.min(284 * scale, usableWidth));
+        height = (float) Math.floor(Math.min(164 * scale, usableHeight));
+        travelX = Math.max(0, usableWidth - width);
+        travelY = Math.max(0, usableHeight - height);
+        if (hasPosition) {
+            left = minLeft + normalizedX * travelX;
+            top = minTop + normalizedY * travelY;
+        } else {
+            // Initial placement leaves room for the map, but is not a drag boundary.
+            left = minLeft + Math.min(10 * density, travelX);
+            top = minTop + Math.min(48 * density, travelY);
+            normalizedX = travelX > 0 ? (left - minLeft) / travelX : 0;
+            normalizedY = travelY > 0 ? (top - minTop) / travelY : 0;
+        }
     }
 
     boolean begin(int pointer, float x, float y) {
@@ -336,6 +343,7 @@ final class PerformancePanelState {
         float nextLeft = Math.max(minLeft, Math.min(minLeft + travelX, x - grabX));
         float nextTop = Math.max(minTop, Math.min(minTop + travelY, y - grabY));
         if (nextLeft == left && nextTop == top) return false;
+        hasPosition = true;
         left = nextLeft;
         top = nextTop;
         if (travelX > 0) normalizedX = (left - minLeft) / travelX;
@@ -345,6 +353,7 @@ final class PerformancePanelState {
 
     boolean release(int pointer) {
         if (!gestureOwned || primaryPointer < 0 || primaryPointer != pointer) return false;
+        hasPosition = true;
         primaryPointer = -1;
         return true;
     }
