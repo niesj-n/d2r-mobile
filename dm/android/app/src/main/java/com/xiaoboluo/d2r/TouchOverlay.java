@@ -68,6 +68,7 @@ public final class TouchOverlay extends View {
     private final float[] rawX = new float[16], rawY = new float[16];
     private final String[] gameLabels, menuLabels;
     private final String[] quickLabels;
+    private final String[][] compactQuickLines;
     private final File overlayRoot;
     private final HashMap<String,Bitmap> images=new HashMap<>(), art=new HashMap<>(), glyphs=new HashMap<>();
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
@@ -124,6 +125,12 @@ public final class TouchOverlay extends View {
         this.menuLabels = menuLabels == null ? new String[5] : menuLabels.clone();
         quickLabels = new String[] {context.getString(R.string.dmAndroidMapVisibilityShort),
                 context.getString(R.string.dmAndroidMapPositionShort), context.getString(R.string.dmAndroidLootFilterShort)};
+        compactQuickLines=new String[quickLabels.length][];
+        for(int i=0;i<quickLabels.length;++i) {
+            String text=quickLabels[i]; int split=text.indexOf(' ');
+            if(split<0 && text.codePointCount(0,text.length())==4) split=text.offsetByCodePoints(0,2);
+            compactQuickLines[i]=split>0 ? new String[]{text.substring(0,split),text.substring(split).trim()} : new String[]{text};
+        }
         lifeFormat=context.getString(R.string.dmHudLife); manaFormat=context.getString(R.string.dmHudMana);
         levelFormat=context.getString(R.string.dmAndroidHudLevel); cancelLabel=context.getString(R.string.dmTcCancel);
         overlayRoot=new File(context.getFilesDir(),"dm/overlay");
@@ -417,6 +424,23 @@ public final class TouchOverlay extends View {
     }
     private void quickSkillControl(Canvas canvas,int kind,float x,float y,float r,boolean held,String text) {
         button(canvas,x,y,r,held,false,false);
+        float scale=layout[4+12*5+2]/60;
+        float naturalY=layout[4+5*5+1]-70*scale;
+        if(y>naturalY+.5f*scale) {
+            // A safe-top clamp leaves no caption gap above I/II. Keep the
+            // complete name inside the socket instead of crossing that row.
+            String[] lines=compactQuickLines[kind];
+            paint.setTypeface(Typeface.DEFAULT_BOLD); paint.setTextAlign(Paint.Align.CENTER);
+            paint.setColor(held?0xffffffff:0xffe4dfd3);
+            float size=r*.45f; paint.setTextSize(size); float widest=0;
+            for(String line:lines) widest=Math.max(widest,paint.measureText(line));
+            float lineHeight=paint.descent()-paint.ascent();
+            float fit=Math.min(1,Math.min(r*1.35f/Math.max(1,widest),r*1.25f/(lines.length*lineHeight)));
+            paint.setTextSize(size*fit); lineHeight=paint.descent()-paint.ascent();
+            float baseline=y-lines.length*lineHeight*.5f-paint.ascent();
+            for(String line:lines) {canvas.drawText(line,x,baseline,paint);baseline+=lineHeight;}
+            paint.setTypeface(null); return;
+        }
         float icon=r*1.25f;
         drawArt(canvas,"utility:"+kind,x-icon/2,y-icon/2,icon,(c,s,t,sc)->utilitySymbol(c,s,kind));
         paint.setTypeface(Typeface.DEFAULT);
