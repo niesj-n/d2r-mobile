@@ -1417,6 +1417,8 @@ def build_ingame(romfs, outdir, spec=None, present=True):   # present=False：�
             add += '        ' + b + ',\n'; total += 1
         end = text.rstrip().rstrip('}').rstrip(); assert end.endswith(']'), rel        # 根对象的 children 数组必须是最后一项 | The root object's children array must be the last item
         at = len(end) - 1; head = text[:at].rstrip(); new = head + ('' if head.endswith((',', '[')) else ',') + '\n' + add + '    ' + text[at:]
+        from product_ui_widgets import augment_panel
+        new = augment_panel(new, rel)
         import json as _json
         try: _json.loads(re.sub(r',(\s*[}\]])', r'\1', re.sub(r'(?m)^\s*//[^\n]*|(?<=[,{\[\s])//[^\n]*', '', re.sub(r'/\*[\s\S]*?\*/', '', new))))   # 原版布局里也有 /* */ 块注释（手柄版佣兵页），校验前一并去掉 | The original game's layouts also contain /* */ block comments (controller-layout mercenary page); strip them too before validating
         except ValueError as e: raise SystemExit('touch_layout：%s 插回后不是合法布局（%s）——游戏会整个面板不显示且不报错' % (rel, e))

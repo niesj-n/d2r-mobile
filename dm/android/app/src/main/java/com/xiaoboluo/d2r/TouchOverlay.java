@@ -41,7 +41,7 @@ public final class TouchOverlay extends View {
     private final int[] settingsProbe = new int[3], appliedSettings = {-1, -1, -1};
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private static final int GLYPHS=119, HUD=167, DRAW_FLOATS=185;
+    private static final int GLYPHS=119, HUD=167, QUICK=185, DRAW_FLOATS=200;
     private final float[] layout = new float[DRAW_FLOATS];
     // 每个刷新周期比较完整绘图快照；坐标、可见性、按下状态与技能组任一变化才重画。
     // The native layout is checked once per refresh; the view redraws only when it differs from what was last drawn
@@ -64,6 +64,7 @@ public final class TouchOverlay extends View {
     private final int[] rawIds = new int[16];
     private final float[] rawX = new float[16], rawY = new float[16];
     private final String[] gameLabels, menuLabels;
+    private final String[] quickLabels;
     private final File overlayRoot;
     private final HashMap<String,Bitmap> images=new HashMap<>(), art=new HashMap<>(), glyphs=new HashMap<>();
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
@@ -103,6 +104,8 @@ public final class TouchOverlay extends View {
         Arrays.fill(pointerIds,-1);
         gameLabels = labels == null ? new String[15] : labels.clone();
         this.menuLabels = menuLabels == null ? new String[5] : menuLabels.clone();
+        quickLabels = new String[] {context.getString(R.string.dmAndroidMapVisibilityShort),
+                context.getString(R.string.dmAndroidMapPositionShort), context.getString(R.string.dmAndroidItemNamesShort)};
         lifeFormat=context.getString(R.string.dmHudLife); manaFormat=context.getString(R.string.dmHudMana);
         levelFormat=context.getString(R.string.dmAndroidHudLevel); cancelLabel=context.getString(R.string.dmTcCancel);
         overlayRoot=new File(context.getFilesDir(),"dm/overlay");
@@ -503,6 +506,12 @@ public final class TouchOverlay extends View {
             if(cancel) { Paint f=new Paint(); f.setColor(rgba(.55,.05,.04,.36)); canvas.drawRect(new RectF(x-r,y-r,x+r,y+r),f); }
             String text=navigation && i==5 ? "" : label(i,navigation); float ts=(i==0?13:10)*k;
             circleControl(canvas,x,y,r,held,text,ts,!navigation && i==11 && !cancel);
+        }
+        for (int i=0; i<quickLabels.length; ++i) {
+            int p=QUICK+i*5;
+            if (navigation || layout[p+3]==0 || layout[p+2]<=0) continue;
+            float r=layout[p+2];
+            circleControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i],Math.min(10f,r*.48f),i==0);
         }
         // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
         int jp=4+12*5;
