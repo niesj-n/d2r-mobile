@@ -109,7 +109,7 @@ final class DriverPackageStore {
         if (h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F' || h[4] != 2 || h[5] != 1)
             throw new IOException("Not a 64-bit little-endian ELF library");
         ByteBuffer b = ByteBuffer.wrap(h).order(ByteOrder.LITTLE_ENDIAN);
-        if (Short.toUnsignedInt(b.getShort(16)) != 2 || Short.toUnsignedInt(b.getShort(18)) != 183)
+        if (Short.toUnsignedInt(b.getShort(16)) != 3 || Short.toUnsignedInt(b.getShort(18)) != 183)
             throw new IOException("Driver must be an ARM64 shared library");
     }
     private static String selectMain(List<String> names, String metadata) throws IOException {
