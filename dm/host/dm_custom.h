@@ -2,11 +2,11 @@
 // 「自定义」(Custom) settings: on/off switches for the features we added ourselves, all read and written here. Each module only calls dm_custom_get and does not read files / environment variables as settings on its own.
 #pragma once
 
-// 已生效的值：布尔键为 0 / 1；Android render_scale 为 0..8，eco_fps 为 0..5（旧值 0/1 保持 60/30）。只在玩家点选项页「应用」后变，「放弃」不变，「默认」= 各键缺省。键不认识返回 1。
+// 已生效的值：布尔键为 0 / 1；Android render_scale 为 0..8，eco_fps 为 0..5（旧值 0/1 保持 60/30）。选项页点「应用」后变，Android 物品过滤快捷键只即时切换 loot_filter；「放弃」不变，「默认」= 各键缺省。键不认识返回 1。
 // 任意线程可调：第一次调用读一次文件，之后只是原子量读 + 几项字符串比较，无锁。iOS 上启动期（存档挂上之前）就能读。
 // 键：auto_mana 自动喝药水（红蓝两种，键名沿用）/ drop_light 高价值掉落光柱 / map_mark 小地图标注出入口、小站与任务终点 / item_notes 物品注释与旧译名 / icloud iCloud 同步存档（cloud_ios.m，启动时读）/ pot_pick 药水自动拾取（dm_potpick.c）/ drop_haptic 高价值掉落震动（dm_drophaptic.c） / gem_pick 符文宝石自动拾取进高级仓库（百宝囊）/ store_btn 背包「存放」按钮（dm_pouch.c）/ eco_fps Android 目标帧率（旧值兼容）
 // touch_swap_above：0 = 传送门左侧（默认），1 = 技能区上方；点「应用」后生效。
-// Effective value: boolean keys use 0/1; Android render_scale uses 0..8 and eco_fps uses 0..5 (legacy 0/1 remain 60/30). Changes only after Apply; Discard leaves it unchanged and Default restores each key's default. Returns 1 for an unknown key.
+// Effective value: boolean keys use 0/1; Android render_scale uses 0..8 and eco_fps uses 0..5 (legacy 0/1 remain 60/30). Apply commits options; the Android filter shortcut immediately toggles only loot_filter. Discard leaves applied values unchanged and Default restores each key's default. Returns 1 for an unknown key.
 // Callable from any thread: the first call reads the file once, after that it is an atomic read plus a few string comparisons, lock-free. On iOS it can be read during startup (before the save is mounted).
 // Keys: auto_mana auto-drink potions (red and blue; key name kept) / drop_light light beam on high-value drops / map_mark minimap markers for entrances and exits, waypoints and quest goals / item_notes item notes and old translated names / icloud iCloud save sync (cloud_ios.m, read at startup) / pot_pick potion auto-pickup (dm_potpick.c) / drop_haptic haptics on high-value drops (dm_drophaptic.c) / gem_pick auto-pickup of runes and gems into the advanced stash (pouch) / store_btn the inventory Deposit button (dm_pouch.c) / eco_fps Android target FPS (legacy values retained)
 // touch_swap_above: 0 = left of portal (default), 1 = above the skill fan; applies after Apply.
@@ -20,6 +20,9 @@ void dm_custom_android_seed_legacy(int left, int right, int monitor);
 // UI-thread safe, no load/IO: returns 0 before native load, otherwise fills
 // {left logical points, right logical points, monitor} from one applied snapshot.
 int dm_custom_android_read_applied(int out[3]);
+// Input-thread safe: queue parity only (no IO/JNI/guest access). The next host
+// UI pump toggles and saves canonical loot_filter without applying other keys.
+void dm_custom_android_request_loot_filter_toggle(void);
 // Android platform bridge: request the driver manager from the Custom button
 // PanelManager:ClosePanel:TouchDriverSettings. Does not apply other settings.
 void dm_android_driver_settings_request(void);

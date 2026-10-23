@@ -95,6 +95,10 @@ static _Atomic int g_loaded;         // 0 没读盘 / 1 已读 | 0 not read from
 static _Atomic int g_android_legacy[3];
 /* One atomic publishes a coherent applied snapshot to the Android UI thread. */
 static _Atomic unsigned g_android_applied;
+static _Atomic unsigned g_android_loot_filter_toggle;
+void dm_custom_android_request_loot_filter_toggle(void) {
+    atomic_fetch_xor(&g_android_loot_filter_toggle, 1u);
+}
 static int margin_clamp(int value) { return value < 0 ? 0 : value > 96 ? 96 : value; }
 void dm_custom_android_seed_legacy(int left, int right, int monitor) {
     if (atomic_load(&g_loaded)) return;
@@ -331,8 +335,30 @@ static void selector_text(uint8_t *b, uint64_t w, const char *text) {
 }
 #endif
 void dm_custom_ui_pump(unsigned long long root) {
+#ifdef __ANDROID__
+    int live_filter_toggled = 0;
+    if (atomic_load(&g_android_loot_filter_toggle)) {
+        load_once();
+        /* Keep queued parity if no settings directory is available yet. */
+        if (atomic_load(&g_loaded) && atomic_exchange(&g_android_loot_filter_toggle, 0)) {
+            int i = key_index("loot_filter");
+            int value = !atomic_load(&g_val[i]);
+            atomic_store(&g_val[i], value);
+            atomic_store(&g_pend[i], -1);
+            atomic_store(&g_repaint, 1);
+            live_filter_toggled = 1;
+            save();
+            LOG("自定义设置：loot_filter → %d（快捷切换）", value);
+        }
+    }
+#endif
     if (!root || !main_base()) return;
     static dm_wref seen[NK];   // 每行最近见到的勾选框（带界面代号：重建后取到 0 = 页刚出现） | Most recently seen checkbox of each row (with UI generation: 0 after a rebuild = page just appeared)
+#ifdef __ANDROID__
+    /* Refresh stale filter checkboxes, including on reopen. A shortcut does
+     * not discard unrelated pending values when the page just became hidden. */
+    if (live_filter_toggled) memset(seen, 0, sizeof seen);
+#endif
     uint64_t sp = dm_ui_top(root, "VideoOptionsPanel"); if (!sp || !*(uint8_t *)(sp + 0x50)) {   // 「自定义」页 = 借来的视频页（界面根的直接子，与设置页并列）。页不在屏上：没点「应用」的勾选作废（同原版不应用就离开），下次出现重摆 | The 「自定义」(Custom) page = the borrowed video page (a direct child of the UI root, alongside the settings page). Page not on screen: checkbox changes without tapping 「应用」(Apply) are discarded (same as leaving without applying in the original game), and it is laid out again the next time it appears
         int was = 0; for (int i = 0; i < NK; i++) was |= seen[i].w != 0;
         if (was) for (int i = 0; i < NK; i++) atomic_store(&g_pend[i], -1);

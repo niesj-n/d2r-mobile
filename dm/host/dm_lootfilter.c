@@ -83,7 +83,18 @@ static const char *want(int bow, int *why_diff) {   // 现在该用哪一份；"
 // Called every frame on the main thread (via the per-frame entry in dm_potpick.c; pl = client player, 0 when not in a game): checks the current profile name every 30 frames
 uint64_t dm_guest_frame(void);
 void dm_lootfilter_pump(uint8_t *b, uint64_t pl) {
+#ifdef __ANDROID__
+    /* fill() pumps Custom before world/potpick. An applied filter change must
+     * reach the native profile in this frame; ordinary difficulty/bow polling
+     * retains the 30-frame cadence. Other platforms keep their original path. */
+    static uint64_t next; static int last_applied = -1;
+    uint64_t fr = dm_guest_frame(); if (!pl) return;
+    int applied = dm_custom_get("loot_filter");
+    if (fr < next && applied == last_applied) return;
+    last_applied = applied; next = fr + 30;
+#else
     static uint64_t next; uint64_t fr = dm_guest_frame(); if (!pl || fr < next) return; next = fr + 30;
+#endif
     uint64_t F = (uint64_t)(uintptr_t)(b + 0x2d58520); if (!*(uint64_t *)(F + 0x10)) return;   // 还没有载入任何配置 | no profile loaded yet
     uint64_t inv = *(uint64_t *)(pl + 0x90), it = inv && *(uint32_t *)inv == 0x01020304 ? *(uint64_t *)(inv + 0x10) : 0; int bow = 0;   // 身上装备着的（方式 1，含副手那套）有没有弓 / 弩 | is there a bow / crossbow among equipped items (mode 1, including the off-hand set)
     for (int k = 0; it && k < 512 && !bow; k++) { uint64_t d = *(uint64_t *)(it + 0x10); if (!d) break;
