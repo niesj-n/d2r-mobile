@@ -54,6 +54,14 @@ def check_env(game):
     return dotnet
 
 
+def patch_settings(target, product):
+    policy = 'selectable' if target == 'android' else 'forced'
+    cache_name = product + '-' + target + ('-walk-selectable' if policy == 'selectable' else '')
+    env = {'DM_TARGET': target, 'DM_RULESET': 'touch-run-v4',
+           'DM_ALLOW_WALK': '1' if policy == 'selectable' else '0'}
+    return policy, cache_name, env
+
+
 def main():
     args = sys.argv[1:]; T = 'android'
     if args[:1] == ['--target'] and len(args) >= 2: T = args[1]; args = args[2:]
@@ -65,15 +73,16 @@ def main():
     if not os.path.isdir(game): die('没有这个游戏文件目录：%s' % game)
     dotnet = check_env(game)
     P = open(os.path.join(DM, 'PRODUCT')).readline().strip()
+    policy, cache_name, patch_env = patch_settings(T, P)
     romfs = os.path.join(game, 'RomFS'); stage = os.path.join(ROOT, 'build', 'pack', T); shutil.rmtree(stage, ignore_errors=True); os.makedirs(stage)
     final = os.path.join(dst, 'android') if T == 'android' else os.path.join(dst, 'harmony', 'dm')
     say('产物代号 %s；做好的文件夹放在 %s' % (P, final))
 
     # 一、改写游戏程序（安卓 / 鸿蒙目标）
     # 1. Rewrite the game program (Android / HarmonyOS target)
-    out = os.path.join(ROOT, 'build', 'cache', 'dm', 'out', P + '-' + T); os.makedirs(out, exist_ok=True)
+    out = os.path.join(ROOT, 'build', 'cache', 'dm', 'out', cache_name); os.makedirs(out, exist_ok=True)
     def patch():
-        for m in MODS: run([PY, os.path.join(HERE, 'patch_nso.py'), os.path.join(game, 'ExeFS', m), out, m], env={'DM_TARGET': T, 'DM_RULESET': 'touch-run-v4'},
+        for m in MODS: run([PY, os.path.join(HERE, 'patch_nso.py'), os.path.join(game, 'ExeFS', m), out, m], env=patch_env,
                            log=os.path.join(out, m + '.patch.log'), what='改写 ' + m)
     # 做过的标准：产物齐，且产物记下的改写器指纹（build_src.sha256）就是这份源码的 patch_nso.py——改写器更新过（产物代号可能没变）就重做
     # Done means: the products are complete and the rewriter fingerprint they record (build_src.sha256) is this source's patch_nso.py -- redo it when the rewriter was updated (the product code may not have changed)
@@ -134,7 +143,9 @@ def main():
 
     # 五、放到输出目录：先写在旁边，齐了再换上（中途失败不留半份）
     # 5. Put it in the output directory: write it alongside first and swap it in once complete (a failure halfway leaves no half copy)
-    with open(os.path.join(stage, 'pack_info.txt'), 'w', encoding='utf-8', newline='\n') as f: f.write('PRODUCT=%s\nTARGET=%s\nMADE=%s\n' % (P, T, time.strftime('%Y-%m-%dT%H:%M:%S')))
+    with open(os.path.join(stage, 'pack_info.txt'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write('PRODUCT=%s\nTARGET=%s\nMADE=%s\n' % (P, T, time.strftime('%Y-%m-%dT%H:%M:%S')))
+        if T == 'android': f.write('RUN_POLICY=%s\n' % policy)
     part = final + '.part'
     shutil.rmtree(part, ignore_errors=True); os.makedirs(part)
     for x in ('out', 'shaders', 'overlay') + (('ui-art',) if T == 'ohos' else ()): shutil.copytree(os.path.join(stage, x), os.path.join(part, x))

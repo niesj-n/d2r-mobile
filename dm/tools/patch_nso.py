@@ -170,6 +170,8 @@ RULESET = os.environ.get('DM_RULESET', 'native')
 assert RULESET in ('native', 'touch-run-v4'), f'未知规则域 {RULESET}'
 RULE_BUILD = 'db0507f36b84200ac05f75d76ed5026f'
 RULE_RUN = RULESET == 'touch-run-v4' and NAME == 'main'
+ALLOW_WALK = (RULE_RUN and os.environ.get('DM_TARGET', 'apple') == 'android'
+              and os.environ.get('DM_ALLOW_WALK', '0') == '1')
 if RULE_RUN:
     import hashlib
     assert BUILD_ID == RULE_BUILD, f'Run规则构建号不符 {BUILD_ID}'
@@ -230,7 +232,13 @@ if RULE_RUN and PRIVATE_GATES:
         (0x6dce90, 0x340000e0, 0xd503201f, 'server49仅取消既有player0/mode2门之后的零精力拒绝'),
         (0x6dcec0, 0xa9bf7bfd, None, 'server4A入口尾跳原49；长度/type0/mode门保留'),
     ]
+    # The Android walk/run control needs the original preference, RunOff and
+    # Walk2 selection paths. Keep the separate stamina exemptions below.
+    walk_selection = {0x2c620c, 0x2c6210, 0x369a90, 0x2b30fc,
+                      0x2b3104, 0x6dc2c4, 0x6dcec0}
     for off, old, new, why in run_words:
+        if ALLOW_WALK and off in walk_selection:
+            continue
         if new is None:
             target = 0x369900 if off == 0x369a90 else 0x6dce50
             new = 0x14000000 | (((target - off) >> 2) & 0x3ffffff)
@@ -962,10 +970,11 @@ if RULE_RUN:
 
     # 原unit null/type5门之后、w8仍为原unitType；只规范player请求2，原其它动作分派/资格完整执行。
     # After the original unit null/type5 gate, with w8 still the original unitType; only player request 2 is normalized, and the other original action dispatch / eligibility checks run in full.
-    run_branch(0x6c6580, 0x51000849, lambda a: [
-        cbz(a,a+16,8,True), 0x51000849, cbz(a+8,a+16,9,True),
-        0x52800062, 0x51000849, B(a+20,0x6c6584)],
-        'touch-run-v4：原通用合法移动仅player0请求Walk2规范为Run3，非player与其它请求保原，w8/原资格不改')
+    if not ALLOW_WALK:
+        run_branch(0x6c6580, 0x51000849, lambda a: [
+            cbz(a,a+16,8,True), 0x51000849, cbz(a+8,a+16,9,True),
+            0x52800062, 0x51000849, B(a+20,0x6c6584)],
+            'touch-run-v4：原通用合法移动仅player0请求Walk2规范为Run3，非player与其它请求保原，w8/原资格不改')
 
 os.makedirs(outdir, exist_ok=True)
 P = lambda ext: os.path.join(outdir, f'{NAME}.{ext}')
