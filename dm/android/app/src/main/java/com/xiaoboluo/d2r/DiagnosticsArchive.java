@@ -49,6 +49,10 @@ final class DiagnosticsArchive {
 
     /** Owns and closes target. A failed flush/close must propagate to the UI. */
     static void write(File files, File runtime, String metadata, OutputStream target) throws IOException {
+        write(files, runtime, metadata, null, target);
+    }
+
+    static void write(File files, File runtime, String metadata, String pipeline, OutputStream target) throws IOException {
         if (target == null) throw new IOException("Cannot open selected destination");
         try (ZipOutputStream zip = new ZipOutputStream(target)) {
             Map<String, File> allowed = new LinkedHashMap<>();
@@ -59,6 +63,11 @@ final class DiagnosticsArchive {
             StringBuilder header = new StringBuilder(metadata.substring(0, Math.min(metadata.length(), METADATA_LIMIT)));
             header.append("\nformat=1\nper_log_limit_bytes=").append(LOG_LIMIT)
                 .append("\ncrash_source=boot.log stderr; last fatal lines may be lost on process exit\n");
+            if (pipeline != null) {
+                content.put("pipeline.log", scrub(pipeline.substring(0, Math.min(pipeline.length(), LOG_LIMIT))
+                    .getBytes(StandardCharsets.UTF_8), files, runtime));
+                header.append("pipeline.log=process-memory snapshot at export request; bounded and lossy; cleared on process restart\n");
+            } else header.append("pipeline.log=unavailable\n");
             for (Map.Entry<String, File> entry : allowed.entrySet()) {
                 File file = entry.getValue(); String status;
                 if (!Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) status = "missing";

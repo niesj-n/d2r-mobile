@@ -5,6 +5,82 @@
 #include <string.h>
 #include <math.h>
 
+/* Each category retains evidence independently. Producers never wait for an exporter
+ * or another producer. No allocation, file access, Vulkan call or guest read here. */
+enum { PIPE_LINE = 768, PIPE_ROWS = 64 };
+typedef struct pipeline_ring {
+    char lines[PIPE_ROWS][PIPE_LINE];
+    uint64_t sequence[PIPE_ROWS], written;
+} pipeline_ring;
+static pipeline_ring pipeline_rings[3];
+/* Namespace and startup acceptance must survive an arbitrary number of saves. */
+static char pipeline_identity[3][PIPE_LINE];
+static uint64_t pipeline_identity_sequence[3];
+static atomic_flag pipeline_lock = ATOMIC_FLAG_INIT;
+static atomic_uint pipeline_dropped;
+static uint64_t pipeline_sequence;
+static int pipeline_category(const char *s) {
+    if (!s) return -1;
+    if (!strncmp(s, "NVN pipeline cache namespace=", 29)) return 3;
+    if (!strncmp(s, "NVN pipeline cache load ", 24)) return 4;
+    if (!strncmp(s, "NVN warm list=", 14)) return 5;
+    if (!strncmp(s, "NVN pipeline cache ", 19) || !strncmp(s, "NVN warm list", 13)) return 0;
+    if (!strncmp(s, "NVN shader ", 11))
+        for (size_t i = 11; i < 300 && s[i]; ++i) if (!strncmp(s + i, " loaded words=", 14)) return 1;
+    if (!strncmp(s, "NVN slow-pso ", 13)) return 2;
+    return -1;
+}
+void dm_android_diagnostics_pipeline_log(const char *text) {
+    int category = pipeline_category(text);
+    if (category < 0) return;
+    if (atomic_flag_test_and_set_explicit(&pipeline_lock, memory_order_acquire)) {
+        atomic_fetch_add_explicit(&pipeline_dropped, 1, memory_order_relaxed); return;
+    }
+    char *line; uint64_t *sequence;
+    if (category >= 3) { line = pipeline_identity[category - 3]; sequence = &pipeline_identity_sequence[category - 3]; }
+    else {
+        pipeline_ring *r = &pipeline_rings[category]; size_t slot = r->written++ % PIPE_ROWS;
+        line = r->lines[slot]; sequence = &r->sequence[slot];
+    }
+    /* Exported evidence is deliberately ASCII: this also prevents split UTF-8,
+     * control-line injection and untrusted paths/strings becoming binary output. */
+    size_t i = 0;
+    for (; i + 1 < PIPE_LINE && text[i]; ++i) {
+        unsigned char c = (unsigned char)text[i]; line[i] = c >= 32 && c < 127 ? (char)c : '_';
+    }
+    line[i] = 0; *sequence = ++pipeline_sequence;
+    atomic_flag_clear_explicit(&pipeline_lock, memory_order_release);
+}
+size_t dm_android_diagnostics_pipeline_copy(char *out, size_t cap) {
+    if (!out || !cap) return 0;
+    size_t used = 0; out[0] = 0;
+    while (atomic_flag_test_and_set_explicit(&pipeline_lock, memory_order_acquire)) {}
+    int n = snprintf(out, cap, "pipeline_diagnostics=1\nsource=bounded process-memory dm-vulkan evidence; grouped categories; seq is process order\n"
+        "slow_policy=create >=20ms; max128 events/process; warm snapshot before synchronous create; diagnostics are not a performance fix\n"
+        "warm_listed=-1 means unknown/not applicable; startup index capped4096; pending is not proof of building\n"
+        "limits=64 rows/category plus3 pinned startup rows,767 ASCII bytes/row; no shader/cache binary or save data\n"
+        "contention_dropped=%u\n", atomic_load_explicit(&pipeline_dropped, memory_order_relaxed));
+    used = n < 0 ? 0 : (size_t)n < cap ? (size_t)n : cap - 1;
+    for (unsigned i = 0; i < 3 && used + 1 < cap; ++i) if (pipeline_identity_sequence[i]) {
+        n = snprintf(out + used, cap - used, "seq=%llu pinned=1 %s\n", (unsigned long long)pipeline_identity_sequence[i], pipeline_identity[i]);
+        used += n < 0 ? 0 : (size_t)n < cap - used ? (size_t)n : cap - used - 1;
+    }
+    for (unsigned c = 0; c < 3 && used + 1 < cap; ++c) {
+        pipeline_ring *r = &pipeline_rings[c];
+        n = snprintf(out + used, cap - used, "category=%s total=%llu overwritten=%llu\n", c == 0 ? "cache" : c == 1 ? "shader" : "slow-pso",
+            (unsigned long long)r->written, (unsigned long long)(r->written > PIPE_ROWS ? r->written - PIPE_ROWS : 0));
+        used += n < 0 ? 0 : (size_t)n < cap - used ? (size_t)n : cap - used - 1;
+        uint64_t first = r->written > PIPE_ROWS ? r->written - PIPE_ROWS : 0;
+        for (uint64_t i = first; i < r->written && used + 1 < cap; ++i) {
+            size_t slot = i % PIPE_ROWS;
+            n = snprintf(out + used, cap - used, "seq=%llu %s\n", (unsigned long long)r->sequence[slot], r->lines[slot]);
+            used += n < 0 ? 0 : (size_t)n < cap - used ? (size_t)n : cap - used - 1;
+        }
+    }
+    atomic_flag_clear_explicit(&pipeline_lock, memory_order_release);
+    return used;
+}
+
 /* Startup writes only. Snapshot copies while locked, formatting and perf reads after unlock. */
 static atomic_flag cache_lock = ATOMIC_FLAG_INIT;
 static char runtime[1200], overlay[80] = "unknown", revision[100] = "unknown";

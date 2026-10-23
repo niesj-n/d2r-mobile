@@ -107,7 +107,12 @@ void pin_update(){
     // keeps the request and applies it again when the cpuset allows, and the next check retries.
     if(changed || pin_drifts<=4 || (r && pin_failures<=4))__android_log_print(ANDROID_LOG_INFO,"dm-vulkan","NVN pin tid=%d %s mask=%x result=%d errno=%d drifts=%u failures=%u",int(gettid()),want?"pinned":"released",want?pin_mask:0u,r,err,pin_drifts,pin_failures);
 }
-void log_message(void*,const char *text){__android_log_print(ANDROID_LOG_INFO,"dm-vulkan","%s",text);}
+void log_message(void*,const char *text){
+#ifdef __ANDROID__
+    dm_android_diagnostics_pipeline_log(text);
+#endif
+    __android_log_print(ANDROID_LOG_INFO,"dm-vulkan","%s",text);
+}
 [[noreturn]] void fatal(void*,const char *text){__android_log_print(ANDROID_LOG_FATAL,"dm-vulkan","%s",text);abort();}
 void destroy_present_semaphores(){for(auto s:finished)if(s)vkDestroySemaphore(device,s,nullptr);finished.clear();}
 // 调用者先等队列空闲；基础WSI销毁仍沿用WaitIdle惯例，不声称提供呈现栅栏保证。
@@ -431,6 +436,8 @@ extern "C" int dm_android_vk_initialize(const char *path,char *error,size_t byte
     dm_vk_config config{};config.size=sizeof(config);config.game.size=sizeof(config.game);config.game.physical=physical;config.game.device=device;config.game.queue=queue;config.game.queue_family=family;config.game.enabled_core=features.features;config.game.enabled_shader_draw_parameters=draw.shaderDrawParameters;config.game.fence_timeout_ns=10000000000ull;config.game.shader_directory=shader_path.c_str();
 #ifdef __ANDROID__
     config.game.cache_directory=cache_path.empty()?nullptr:cache_path.c_str();
+    std::string cache_namespace=cache_path.empty()?"legacy-system":cache_path.substr(cache_path.find_last_of('/')+1);
+    dm_android_diagnostics_pipeline_log(("NVN pipeline cache namespace="+cache_namespace).c_str());
 #endif
     config.game.present=present;config.game.log=log_message;config.game.fatal=fatal;config.sampler_mirror_clamp_to_edge=mirror;config.has_window=has_window;config.display_hz=0; // Query actual display refresh in frontend; do not guess 60 Hz.
     int status=dm_vk_initialize(&config,error,bytes);if(!status)ready=true;else cleanup_initialization();return status;

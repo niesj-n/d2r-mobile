@@ -65,6 +65,18 @@ static jstring utf8_string(JNIEnv *env, const char *text) {
     return value;
 }
 
+/* Called only by DiagnosticsExporter's existing prepare worker on its ART stack.
+ * Snapshot is process memory; no file/Vulkan/guest reads and no renderer rendezvous. */
+JNIEXPORT jstring JNICALL Java_com_xiaoboluo_d2r_DiagnosticsExporter_nativePipelineDiagnostics(
+    JNIEnv *env, jclass cls) {
+    (void)cls;
+    char *snapshot = malloc(DM_ANDROID_PIPELINE_LOG_CAPACITY);
+    if (!snapshot) return NULL;
+    dm_android_diagnostics_pipeline_copy(snapshot, DM_ANDROID_PIPELINE_LOG_CAPACITY);
+    jstring value = utf8_string(env, snapshot);
+    free(snapshot); return value;
+}
+
 static void *input_worker(void *unused) {
     (void)unused;
     pthread_setname_np(pthread_self(), "dm-java-input");

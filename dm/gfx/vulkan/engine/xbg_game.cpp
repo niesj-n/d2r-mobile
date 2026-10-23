@@ -11,6 +11,7 @@ extern "C" int xbg_completion_wait_selftest(char *report,size_t bytes);
 #include "xbg_draw_timing.h"
 #include "xbg_provenance.h"
 #include "xbg_pipeline_key.h"
+#include "xbg_pipeline_diagnostics.h"
 #include "xbg_vulkan.h"
 #include "xbg_depth.h"
 #include "xbg_sampler.h"
@@ -874,12 +875,13 @@ void submit_slots(bool wait){
 size_t pipelines_unsaved=0;uint64_t pipeline_save_frame=0;constexpr uint64_t compile_ns=2000000;
 std::string pipeline_cache_path(){if(cfg.cache_directory)return std::string(cfg.cache_directory)+"/vk-pipeline-cache.bin";std::string dir=cfg.shader_directory;size_t cut=dir.find_last_of('/');return (cut==std::string::npos?dir:dir.substr(0,cut))+"/vk-pipeline-cache.bin";}
 std::vector<uint8_t> load_pipeline_cache(){
-    std::vector<uint8_t> data;FILE *f=fopen(pipeline_cache_path().c_str(),"rb");if(!f)return data;
+    std::vector<uint8_t> data;FILE *f=fopen(pipeline_cache_path().c_str(),"rb");if(!f){xbg_logf("NVN pipeline cache load bytes=0 result=%s errno=%d",errno==ENOENT?"missing":"open_failed",errno);return data;}
     fseek(f,0,SEEK_END);long n=ftell(f);fseek(f,0,SEEK_SET);
-    if(n>32 && n<(256l<<20)){data.resize(size_t(n));if(fread(data.data(),1,data.size(),f)!=data.size())data.clear();}
+    const char *result="invalid_size";
+    if(n>32 && n<(256l<<20)){data.resize(size_t(n));if(fread(data.data(),1,data.size(),f)!=data.size()){data.clear();result="read_failed";}else result="accepted";}
     fclose(f);
-    if(data.size()>=32){uint32_t header[4];memcpy(header,data.data(),16);if(header[1]!=1 || header[2]!=properties.vendorID || header[3]!=properties.deviceID || memcmp(data.data()+16,properties.pipelineCacheUUID,16))data.clear();}
-    xbg_logf("NVN pipeline cache load bytes=%zu",data.size());return data;
+    if(data.size()>=32){uint32_t header[4];memcpy(header,data.data(),16);if(header[1]!=1 || header[2]!=properties.vendorID || header[3]!=properties.deviceID || memcmp(data.data()+16,properties.pipelineCacheUUID,16)){data.clear();result="header_mismatch";}}
+    xbg_logf("NVN pipeline cache load bytes=%zu source_bytes=%ld result=%s",data.size(),n,result);return data;
 }
 // The cache is written by its own thread: a save serializes the whole cache (17.7 MB on the Redmi K50 Ultra) and writes
 // it, which ran on the graphics thread every 300 frames while pipelines were new. Marker gfx-sync-cache-save = '1' saves on
@@ -1947,7 +1949,7 @@ Shader *load_shader(const void *control){
     if(h.stage==0){p->input_classes.resize(p->inputs.size());need(xbg_vertex_input_classes(words.data(),words.size(),p->inputs.data(),p->inputs.size(),p->input_classes.data())==0,"Unsupported vertex input scalar interface");}
     load_t3=timing_clock();
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};ci.codeSize=words.size()*4;ci.pCode=words.data();VK(vkCreateShaderModule(cfg.device,&ci,nullptr,&p->module));warm::register_module(p->module,key);Shader *out=p.get();shaders.emplace(key,std::move(p));++stats.shader_loads;++hud::shaders;const uint64_t load_t4=timing_clock();hud::shader_ns+=load_t4-load_t0;
-    xbg_logf("NVN shader %s stage=%u loaded words=%zu ms read=%.2f rewrite=%.2f analyse=%.2f module=%.2f reused=%d",key.c_str(),h.stage,words.size(),(load_t1-load_t0)/1e6,(load_t2-load_t1)/1e6,(load_t3-load_t2)/1e6,(load_t4-load_t3)/1e6,int(have_reused));return out;
+    xbg_logf("NVN shader %s stage=%u loaded words=%zu ms read=%.2f rewrite=%.2f analyse=%.2f module=%.2f reused=%d frame=%llu",key.c_str(),h.stage,words.size(),(load_t1-load_t0)/1e6,(load_t2-load_t1)/1e6,(load_t3-load_t2)/1e6,(load_t4-load_t3)/1e6,int(have_reused),(unsigned long long)hud::frame.load(std::memory_order_relaxed));return out;
 }
 // nvnProgramSetShaders assigns a new serial, and NVN shader control/code memory
 // must stay unchanged while a program uses it: cache resolved shaders by serial
@@ -2032,6 +2034,10 @@ std::unordered_map<uint64_t,std::string> id_keys;
 void register_module(VkShaderModule m,const std::string &key){std::lock_guard<std::mutex> l(mu);uint64_t id=fnv(key);ids[m]=id;id_keys[id]=key;}
 struct Rec{std::vector<std::string> keys;std::vector<uint32_t> words;};
 std::vector<Rec> recs;std::unordered_set<std::string> known;std::vector<uint8_t> pending;
+// Small index into existing startup records, not another copy of the serialized keys.
+// Hash candidates are checked against all bytes; phases are protected by mu.
+std::unordered_multimap<uint64_t,size_t> diagnostic_recs;
+std::array<unsigned char,xbg_diag::RecordLimit> diagnostic_phases{};
 std::unordered_map<std::string,VkPipeline> ready;std::vector<std::thread> threads;std::atomic<bool> stop{false};std::atomic<size_t> next{0};
 std::atomic<uint64_t> built{0},failed{0},build_ns{0},compiled{0};uint64_t hits=0,creates=0,create_ns=0,create_max_ns=0;bool enabled=true;
 std::unordered_map<std::string,VkShaderModule> modules;std::unordered_map<std::string,VkPipelineLayout> layouts;std::unordered_map<std::string,VkRenderPass> passes;
@@ -2045,7 +2051,7 @@ void record(const VkGraphicsPipelineCreateInfo &ci,const XbgPipelineKey &key){
     put(0x57504c58);put(uint32_t(keys.size()));for(auto &k:keys){put(uint32_t(k.size()));pending.insert(pending.end(),k.begin(),k.end());}
     put(key.count);pending.insert(pending.end(),bytes.begin(),bytes.end());
 }
-void flush(){if(pending.empty())return;FILE *f=fopen(list_path().c_str(),"ab");if(!f)return;bool ok=fwrite(pending.data(),1,pending.size(),f)==pending.size();ok=fclose(f)==0&&ok;if(ok)pending.clear();}
+void flush(){if(pending.empty())return;FILE *f=fopen(list_path().c_str(),"ab");if(!f){xbg_logf("NVN warm list flush bytes=%zu ok=0 result=open_failed errno=%d",pending.size(),errno);return;}size_t bytes=pending.size();bool ok=fwrite(pending.data(),1,pending.size(),f)==pending.size();ok=fclose(f)==0&&ok;if(ok)pending.clear();xbg_logf("NVN warm list flush bytes=%zu ok=%d pending=%zu",bytes,int(ok),pending.size());}
 // gfx-shader-reuse：预热改写好的 SPIR-V，按着色器键留到 load_shader 取走（取走即删）；没用到的随 shutdown 释放。
 // gfx-shader-reuse: SPIR-V the warm-up rewrote, kept by shader key until load_shader takes it (taking removes it); unused entries
 // are freed at shutdown.
@@ -2117,7 +2123,10 @@ bool build(const Rec &rec){
 }
 void worker(){
     setpriority(PRIO_PROCESS,0,5); // below the game and graphics threads
-    for(;;){if(stop.load())return;size_t i=next.fetch_add(1);if(i>=recs.size())return;uint64_t t0=timing_clock();if(build(recs[i]))++built;else ++failed;build_ns+=timing_clock()-t0;}
+    for(;;){if(stop.load())return;size_t i=next.fetch_add(1);if(i>=recs.size())return;
+        if(i<xbg_diag::RecordLimit){std::lock_guard<std::mutex> l(mu);diagnostic_phases[i]=1;}
+        uint64_t t0=timing_clock();bool ok=build(recs[i]);if(ok)++built;else ++failed;build_ns+=timing_clock()-t0;
+        if(i<xbg_diag::RecordLimit){std::lock_guard<std::mutex> l(mu);diagnostic_phases[i]=ok?2:3;}}
 }
 // Runtime builds for draws that may be skipped (gfx-async-pipelines): a blended draw that writes no depth, stencil or
 // storage and counts no samples the game reads is skipped while one background thread builds its pipeline from the
@@ -2126,6 +2135,22 @@ void worker(){
 // host asks (DM_GFX_ASYNC_PIPELINES; marker gfx-async-pipelines 1 / 0).
 bool async_on=false;std::deque<Rec> async_q;std::unordered_set<std::string> async_pending,async_failed;std::condition_variable async_cv;std::thread async_thread;
 std::atomic<uint64_t> async_built{0},async_skips{0};
+xbg_diag::Warm diagnostic_state(const std::string &bytes){
+    xbg_diag::Warm s;std::lock_guard<std::mutex> l(mu);s.enabled=enabled;s.known=known.count(bytes)!=0;s.ready=ready.count(bytes)!=0;
+    s.listed=(!s.known || recs.size()<=xbg_diag::RecordLimit)?0:-1;
+    auto range=diagnostic_recs.equal_range(xbg_diag::bytes_hash(bytes.data(),bytes.size()));
+    for(auto it=range.first;it!=range.second;++it){const Rec &r=recs[it->second];
+        if(r.words.size()*4!=bytes.size() || memcmp(r.words.data(),bytes.data(),bytes.size()))continue;
+        const unsigned char phase=diagnostic_phases[it->second];
+        s.listed=1;s.queued=enabled && phase==0;s.building=phase==1;s.built=phase==2;s.failed=phase==3;break;}
+    s.async_pending=async_pending.count(bytes)!=0;s.failed=s.failed || async_failed.count(bytes)!=0;return s;
+}
+void diagnostic_keys(uint32_t count,const VkPipelineShaderStageCreateInfo *st,char keys[6][81]){
+    std::lock_guard<std::mutex> l(mu);
+    for(uint32_t i=0;i<std::min(count,6u);i++){auto it=ids.find(st[i].module);auto key=it==ids.end()?id_keys.end():id_keys.find(it->second);
+        const char *s=key==id_keys.end()?"unknown":key->second.c_str();
+        if(snprintf(keys[i],81,"%s",s)>=81)keys[i][79]='~';}
+}
 void async_worker(){
     setpriority(PRIO_PROCESS,0,5);
     for(;;){Rec r;{std::unique_lock<std::mutex> l(mu);async_cv.wait(l,[]{return stop.load() || !async_q.empty();});if(stop.load())return;r=std::move(async_q.front());async_q.pop_front();}
@@ -2162,13 +2187,15 @@ void start(){
             for(uint32_t s=0;s<ns && good;s++){uint32_t len;if(!get(len)||len>256||i+len>b.size()){good=false;break;}r.keys.emplace_back(reinterpret_cast<const char*>(b.data()+i),len);i+=len;}
             if(!good||!get(count)||count>XbgPipelineKey::Capacity||i+size_t(count)*4>b.size())break;r.words.resize(count);memcpy(r.words.data(),b.data()+i,size_t(count)*4);i+=size_t(count)*4;
             if(known.insert(std::string(reinterpret_cast<const char*>(r.words.data()),r.words.size()*4)).second)recs.push_back(std::move(r));}}
-    xbg_logf("NVN warm list=%zu enabled=%d",recs.size(),int(enabled));
+    diagnostic_phases.fill(0);
+    for(size_t j=0;j<std::min(recs.size(),xbg_diag::RecordLimit);j++)diagnostic_recs.emplace(xbg_diag::key_hash(recs[j].words.data(),uint32_t(recs[j].words.size())),j);
+    xbg_logf("NVN warm list=%zu enabled=%d source=%s diagnostic_index=%zu diagnostic_cap=%zu",recs.size(),int(enabled),f?"opened":"missing_or_open_failed",diagnostic_recs.size(),xbg_diag::RecordLimit);
     if(!enabled || recs.empty())return;stop=false;next=0;unsigned n=std::min<unsigned>(3,std::max(1u,std::thread::hardware_concurrency()/3));
     for(unsigned i=0;i<n;i++)threads.emplace_back(worker);
 }
 void shutdown(){{std::lock_guard<std::mutex> l(mu);stop=true;}async_cv.notify_all();for(auto &t:threads)if(t.joinable())t.join();threads.clear();if(async_thread.joinable())async_thread.join();std::lock_guard<std::mutex> l(mu);async_q.clear();async_pending.clear();async_failed.clear();
     for(auto &p:ready)vkDestroyPipeline(cfg.device,p.second,nullptr);ready.clear();for(auto &p:layouts)vkDestroyPipelineLayout(cfg.device,p.second,nullptr);layouts.clear();for(auto s:set_layouts)vkDestroyDescriptorSetLayout(cfg.device,s,nullptr);set_layouts.clear();
-    for(auto &p:passes)vkDestroyRenderPass(cfg.device,p.second,nullptr);passes.clear();for(auto &m:modules)vkDestroyShaderModule(cfg.device,m.second,nullptr);modules.clear();ids.clear();id_keys.clear();recs.clear();known.clear();rewritten.clear();}
+    for(auto &p:passes)vkDestroyRenderPass(cfg.device,p.second,nullptr);passes.clear();for(auto &m:modules)vkDestroyShaderModule(cfg.device,m.second,nullptr);modules.clear();ids.clear();id_keys.clear();diagnostic_recs.clear();recs.clear();known.clear();rewritten.clear();}
 bool take(const std::string &bytes,VkPipeline &out){std::lock_guard<std::mutex> l(mu);auto it=ready.find(bytes);if(it==ready.end())return false;out=it->second;ready.erase(it);return true;}
 }
 // Diagnostic (marker gfx-pipe-stats, with the warm-up off): the driver's statistics of each pipeline as it is created, and
@@ -2187,6 +2214,16 @@ void pstat_log(VkPipeline pl){
         std::string en=ex[i].name;for(auto &c:en)if(c==' ')c='_';
         xbg_logf("NVN PSTAT pipeline=%p what=%s exec=%u stages=%#x name=%s subgroup=%u%s",(void*)pl,pstat_what().c_str(),i,unsigned(ex[i].stages),en.c_str(),ex[i].subgroupSize,line.c_str());}
 }
+void pipeline_diagnostic(const XbgPipelineKey &key,bool cacheable,const VkGraphicsPipelineCreateInfo *graphics,const VkComputePipelineCreateInfo *compute,const xbg_diag::Warm &before,uint64_t frame,uint64_t dt){
+    static xbg_diag::Budget budget;if(!budget.take(dt))return;
+    const uint32_t count=std::min(graphics?graphics->stageCount:1u,6u);
+    const VkPipelineShaderStageCreateInfo *st=graphics?graphics->pStages:&compute->stage;
+    char storage[6][81]{};const char *keys[6]{};uint32_t stages[6]{};
+    warm::diagnostic_keys(count,st,storage);
+    for(uint32_t i=0;i<count;i++){keys[i]=storage[i];stages[i]=st[i].stage;}
+    char line[768];xbg_diag::format(line,sizeof line,frame,xbg_diag::key_hash(key.words,key.count),graphics!=nullptr,cacheable,before,dt,count,stages,keys);
+    xbg_logf("%s",line); // No warm mutex held across formatting/log callback.
+}
 void pipeline_lookup(PipelineLease &out,const XbgPipelineKey &key,bool cacheable,const VkGraphicsPipelineCreateInfo *graphics,const VkComputePipelineCreateInfo *compute,bool may_skip=false){
     static std::string bytes;bytes.clear();   // reused key buffer (graphics thread only)
     if(cacheable){
@@ -2198,8 +2235,8 @@ void pipeline_lookup(PipelineLease &out,const XbgPipelineKey &key,bool cacheable
     if(graphics && cacheable && warm::take(bytes,out.pipeline)){++warm::hits;}
     // A draw that may be skipped gets no pipeline while its build is queued (warm::async_request); it is not cached.
     else if(graphics && cacheable && may_skip && warm::async_request(*graphics,key,bytes)){out.pipeline=VK_NULL_HANDLE;out.transient=true;++warm::async_skips;return;}
-    else if(graphics){uint64_t t0=timing_clock();VkGraphicsPipelineCreateInfo g=*graphics;if(pipe_stats)g.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;VK(vkCreateGraphicsPipelines(cfg.device,pipeline_cache,1,&g,nullptr,&out.pipeline));if(pipe_stats)pstat_log(out.pipeline);uint64_t dt=timing_clock()-t0;if(dt>=compile_ns)++pipelines_unsaved;++warm::creates;warm::create_ns+=dt;++hud::pipelines;hud::pipeline_ns+=dt;warm::create_max_ns=std::max(warm::create_max_ns,dt);if(cacheable)warm::record(*graphics,key);}
-    else{uint64_t t0=timing_clock();VkComputePipelineCreateInfo cc=*compute;if(pipe_stats)cc.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;VK(vkCreateComputePipelines(cfg.device,pipeline_cache,1,&cc,nullptr,&out.pipeline));++pipelines_unsaved;++hud::pipelines;hud::pipeline_ns+=timing_clock()-t0;if(pipe_stats)pstat_log(out.pipeline);}
+    else if(graphics){const xbg_diag::Warm before=cacheable?warm::diagnostic_state(bytes):xbg_diag::Warm{};const uint64_t frame=hud::frame.load(std::memory_order_relaxed);uint64_t t0=timing_clock();VkGraphicsPipelineCreateInfo g=*graphics;if(pipe_stats)g.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;VK(vkCreateGraphicsPipelines(cfg.device,pipeline_cache,1,&g,nullptr,&out.pipeline));if(pipe_stats)pstat_log(out.pipeline);uint64_t dt=timing_clock()-t0;if(dt>=compile_ns)++pipelines_unsaved;++warm::creates;warm::create_ns+=dt;++hud::pipelines;hud::pipeline_ns+=dt;warm::create_max_ns=std::max(warm::create_max_ns,dt);pipeline_diagnostic(key,cacheable,graphics,nullptr,before,frame,dt);if(cacheable)warm::record(*graphics,key);}
+    else{const uint64_t frame=hud::frame.load(std::memory_order_relaxed);uint64_t t0=timing_clock();VkComputePipelineCreateInfo cc=*compute;if(pipe_stats)cc.flags|=VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;VK(vkCreateComputePipelines(cfg.device,pipeline_cache,1,&cc,nullptr,&out.pipeline));++pipelines_unsaved;++hud::pipelines;const uint64_t dt=timing_clock()-t0;hud::pipeline_ns+=dt;if(pipe_stats)pstat_log(out.pipeline);pipeline_diagnostic(key,cacheable,nullptr,compute,{},frame,dt);}
     if(!cacheable){out.transient=true;return;}
     if(pipeline_objects.size()==pipeline_object_limit){
         // All prior draws/dispatches waited their fence. This lookup occurs

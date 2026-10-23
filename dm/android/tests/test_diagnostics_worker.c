@@ -20,6 +20,7 @@ int dm_name_gen(char *o, int c, int (*taken)(const char *)) { (void)o; (void)c; 
 int __android_log_print(int p, const char *tag, const char *fmt, ...) { (void)p; (void)tag; (void)fmt; return 0; }
 const char *dm_android_diagnostics_runtime(void) { return "/private/dm"; }
 void dm_android_diagnostics_snapshot(char *out, size_t cap, uint64_t now) { assert(now); snprintf(out, cap, "native_metadata=yes\n"); }
+size_t dm_android_diagnostics_pipeline_copy(char *out, size_t cap) { snprintf(out, cap, "pipeline_test=yes\n"); return strlen(out); }
 
 static pthread_t request_thread;
 static pthread_mutex_t test_lock = PTHREAD_MUTEX_INITIALIZER;

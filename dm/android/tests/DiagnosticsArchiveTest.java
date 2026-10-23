@@ -37,6 +37,15 @@ public final class DiagnosticsArchiveTest {
         assert metadata.contains("build=test");
         assert !new String(entries.get("boot.log"), StandardCharsets.UTF_8).contains(files.toString());
         assert new String(entries.get("boot.log"), StandardCharsets.UTF_8).contains("CRASH sig=11");
+        output.reset();
+        DiagnosticsArchive.write(files, runtime, "build=test\n", "NVN slow-pso frame=74706 key=123\nprivate_path=" + runtime, output);
+        entries = unzip(output.toByteArray());
+        assert entries.containsKey("pipeline.log");
+        String pipeline = new String(entries.get("pipeline.log"), StandardCharsets.UTF_8);
+        assert pipeline.contains("frame=74706") && !pipeline.contains(runtime.toString());
+        assert new String(entries.get("metadata.txt"), StandardCharsets.UTF_8).contains("pipeline.log=process-memory snapshot");
+        output.reset(); DiagnosticsArchive.write(files, runtime, "test=yes", "x".repeat(DiagnosticsArchive.LOG_LIMIT * 2), output);
+        assert unzip(output.toByteArray()).get("pipeline.log").length <= DiagnosticsArchive.LOG_LIMIT;
         byte[] huge = new byte[DiagnosticsArchive.LOG_LIMIT * 2]; Arrays.fill(huge, (byte)'x');
         byte[] marker = "\nLAST-FRAME\n".getBytes(StandardCharsets.UTF_8);
         System.arraycopy(marker, 0, huge, huge.length - marker.length, marker.length);

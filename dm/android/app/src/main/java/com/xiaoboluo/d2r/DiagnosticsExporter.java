@@ -19,7 +19,9 @@ final class DiagnosticsExporter {
     private final Activity activity;
     private boolean busy;
     private String pendingMetadata;
+    private String pendingPipeline;
     private File pendingRuntime;
+    private static native String nativePipelineDiagnostics();
 
     DiagnosticsExporter(Activity activity) { this.activity = activity; }
 
@@ -28,6 +30,7 @@ final class DiagnosticsExporter {
         busy = true;
         File files = activity.getFilesDir();
         new Thread(() -> {
+            String pipeline = nativePipelineDiagnostics();
             DriverPackageStore.DriverInfo selected = DriverPackageStore.selected(files);
             String metadata = "D2R Mobile Android Diagnostics\nexport_time=" + new Date() +
                 "\napplication_id=" + BuildConfig.APPLICATION_ID + "\nversion=" + BuildConfig.VERSION_NAME +
@@ -41,7 +44,7 @@ final class DiagnosticsExporter {
                 "\nselection_note=selection applies on next restart; loaded_driver is current process\n" + nativeMetadata;
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing() || activity.isDestroyed()) { busy = false; return; }
-                pendingRuntime = new File(runtime); pendingMetadata = metadata;
+                pendingRuntime = new File(runtime); pendingMetadata = metadata; pendingPipeline = pipeline;
                 Intent picker = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
                     .setType("application/zip").putExtra(Intent.EXTRA_TITLE, "D2RMobile_diagnostics_" +
                         new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.ROOT).format(new Date()) + ".zip");
@@ -51,7 +54,7 @@ final class DiagnosticsExporter {
         }, "dm-diagnostics-prepare").start();
     }
 
-    private void clear() { busy = false; pendingMetadata = null; pendingRuntime = null; }
+    private void clear() { busy = false; pendingMetadata = null; pendingPipeline = null; pendingRuntime = null; }
 
     boolean onActivityResult(int request, int result, Intent data) {
         if (request != CREATE_DIAGNOSTICS) return false;
@@ -59,7 +62,7 @@ final class DiagnosticsExporter {
             clear(); Toast.makeText(activity, R.string.dmAndroidDiagnosticsCancelled, Toast.LENGTH_SHORT).show(); return true;
         }
         Uri destination = data.getData();
-        String metadata = pendingMetadata; File runtime = pendingRuntime;
+        String metadata = pendingMetadata; String pipeline = pendingPipeline; File runtime = pendingRuntime;
         if (metadata == null || runtime == null) {
             clear(); showFailure(new IllegalStateException(activity.getString(R.string.dmAndroidDiagnosticsRequestLost))); return true;
         }
@@ -67,7 +70,7 @@ final class DiagnosticsExporter {
         new Thread(() -> {
             try {
                 OutputStream stream = activity.getContentResolver().openOutputStream(destination, "wt");
-                DiagnosticsArchive.write(files, runtime, metadata, stream);
+                DiagnosticsArchive.write(files, runtime, metadata, pipeline, stream);
                 activity.runOnUiThread(() -> {
                     clear();
                     if (!activity.isFinishing() && !activity.isDestroyed()) new AlertDialog.Builder(activity)
