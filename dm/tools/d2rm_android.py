@@ -55,10 +55,10 @@ def check_env(game):
 
 
 def patch_settings(target, product):
-    policy = 'selectable' if target == 'android' else 'forced'
-    cache_name = product + '-' + target + ('-walk-selectable' if policy == 'selectable' else '')
+    policy = 'forced'
+    cache_name = product + '-' + target
     env = {'DM_TARGET': target, 'DM_RULESET': 'touch-run-v4',
-           'DM_ALLOW_WALK': '1' if policy == 'selectable' else '0'}
+           'DM_ALLOW_WALK': '0'}
     return policy, cache_name, env
 
 

@@ -1,4 +1,4 @@
-"""Check Android's selectable walk/run policy against a real 94012 main NSO."""
+"""Check default running policy and the optional selectable rewrite against 94012."""
 
 import os
 from pathlib import Path
@@ -37,12 +37,12 @@ def original_image(path):
 
 
 class WalkPolicyTest(unittest.TestCase):
-    def test_android_import_selects_walk_policy(self):
+    def test_android_import_restores_original_running_policy(self):
         from d2rm_android import patch_settings
 
         self.assertEqual(patch_settings('android', 'r44'), (
-            'selectable', 'r44-android-walk-selectable',
-            {'DM_TARGET': 'android', 'DM_RULESET': 'touch-run-v4', 'DM_ALLOW_WALK': '1'},
+            'forced', 'r44-android',
+            {'DM_TARGET': 'android', 'DM_RULESET': 'touch-run-v4', 'DM_ALLOW_WALK': '0'},
         ))
         self.assertEqual(patch_settings('ohos', 'r44'), (
             'forced', 'r44-ohos',
