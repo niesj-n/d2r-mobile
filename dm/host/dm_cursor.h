@@ -115,6 +115,8 @@ void dm_ui_bind_cancel(void);
 void dm_ui_map_full(int on);
 /* Relative action remains ordered with pending absolute changes until the guest pump. */
 void dm_ui_map_toggle(void);
+/* Android quick map position: left -> center -> right; does not change the saved startup option. */
+void dm_ui_map_cycle_position(void);
 int dm_ui_map_is_full(void);
 /* Android user action; consumed on the guest thread, never changes saved map options. */
 void dm_ui_map_recenter(void);

@@ -21,6 +21,7 @@ PRELUDE = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include <math.h>
 #define LOG(...) ((void)0)
 typedef struct { unsigned char *base; } module_t;
@@ -40,6 +41,7 @@ static float test_panel_scale(uint64_t p) { (void)p;return 1; }
 static void test_change_mode(int mode) {
     callback_count++;last_mode=mode;
     *(int32_t *)(mod.base+0x2d5c748)=mode!=0;
+    *(int32_t *)(mod.base+0x2d5e8f0)=mode==1;
     *(int32_t *)(mod.base+0x2d5e910)=0;
     *(int32_t *)(mod.base+0x2d5e914)=0;
 }
@@ -47,6 +49,11 @@ static int failures;
 #define CHECK(c) do { if(!(c)) { fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#c);failures++; } } while(0)
 '''
 CASES = r'''
+#if HAVE_POSITION
+#define QUEUE_POSITION() dm_ui_map_cycle_position()
+#else
+#define QUEUE_POSITION() dm_ui_map_toggle()
+#endif
 #if HAVE_TOGGLE
 #define QUEUE_TOGGLE() dm_ui_map_toggle()
 #else
@@ -61,6 +68,26 @@ int main(int argc,char **argv) {
     int32_t *cfg=(int32_t *)(mod.base+0x2d479f4),*mini=(int32_t *)(mod.base+0x2d5c748);
     int32_t *sx=(int32_t *)(mod.base+0x2d5e910),*sy=(int32_t *)(mod.base+0x2d5e914);
     switch(atoi(argv[1])) {
+    case 7:
+        *cfg=2;*mini=1;ui_map_pump(&mod);
+        QUEUE_POSITION();ui_map_pump(&mod);CHECK(last_mode==1);CHECK(*mini==1);
+        QUEUE_POSITION();ui_map_pump(&mod);CHECK(last_mode==0);CHECK(*mini==0);
+        QUEUE_POSITION();ui_map_pump(&mod);CHECK(last_mode==2);CHECK(*mini==1);CHECK(*cfg==2);
+        break;
+    case 8:
+        *cfg=2;*mini=1;ui_map_pump(&mod);
+        QUEUE_POSITION();QUEUE_POSITION();QUEUE_POSITION();ui_map_pump(&mod);
+        CHECK(callback_count==0);CHECK(*mini==1);
+        QUEUE_POSITION();QUEUE_POSITION();ui_map_pump(&mod);
+        CHECK(last_mode==0);CHECK(callback_count==1);
+        break;
+    case 9:
+        *cfg=2;*mini=1;ui_map_pump(&mod);
+        QUEUE_POSITION();dm_ui_map_full(1);QUEUE_POSITION();ui_map_pump(&mod);
+        CHECK(callback_count==0);CHECK(*mini==1);CHECK(*cfg==2);
+        in_game=0;QUEUE_POSITION();ui_map_pump(&mod);
+        in_game=1;ui_map_pump(&mod);CHECK(callback_count==0);CHECK(*mini==1);
+        break;
     case 0:
         *cfg=0;*mini=0;ui_map_pump(&mod);
         CHECK(*cfg==0);CHECK(callback_count==0);CHECK(dm_ui_map_is_full());
@@ -70,7 +97,7 @@ int main(int argc,char **argv) {
         CHECK(*cfg==0);CHECK(*mini==0);CHECK(dm_ui_map_is_full());
         break;
     case 1: case 2: {
-        int side=atoi(argv[1]);*cfg=side;*mini=1;ui_map_pump(&mod);
+        int side=atoi(argv[1]);*cfg=side;*mini=1;*(int32_t *)(mod.base+0x2d5e8f0)=side==1;ui_map_pump(&mod);
         CHECK(*cfg==side);CHECK(callback_count==0);CHECK(!dm_ui_map_is_full());
         dm_ui_map_full(1);ui_map_pump(&mod);
         CHECK(*cfg==side);CHECK(last_mode==0);CHECK(dm_ui_map_is_full());
@@ -137,12 +164,12 @@ class AndroidMapControls(unittest.TestCase):
         cls.temp=tempfile.TemporaryDirectory()
         folder=Path(cls.temp.name)
         src=folder/'map_controls.c';cls.exe=folder/('map_controls.exe' if os.name=='nt' else 'map_controls')
-        src.write_text(PRELUDE+'\n#define HAVE_RECENTER '+str(int('void dm_ui_map_recenter(void)' in block))+'\n#define HAVE_TOGGLE '+str(int('void dm_ui_map_toggle(void)' in block))+'\n'+block+CASES,encoding='utf-8')
+        src.write_text(PRELUDE+'\n#define HAVE_RECENTER '+str(int('void dm_ui_map_recenter(void)' in block))+'\n#define HAVE_TOGGLE '+str(int('void dm_ui_map_toggle(void)' in block))+'\n#define HAVE_POSITION '+str(int('void dm_ui_map_cycle_position(void)' in block))+'\n'+block+CASES,encoding='utf-8')
         command=[cc]
         if Path(cc).stem=='zig':
             command+=['cc']
             if os.name=='nt':command+=['-target','x86_64-windows-gnu']
-        command+=['-D__ANDROID__=1','-std=c11','-O1',str(src),'-o',str(cls.exe)]
+        command+=['-pthread','-D__ANDROID__=1','-std=c11','-O1',str(src),'-o',str(cls.exe)]
         if os.name!='nt':command+=['-lm']
         result=subprocess.run(command,text=True,capture_output=True)
         if result.returncode:raise AssertionError(result.stdout+result.stderr)
@@ -152,6 +179,9 @@ class AndroidMapControls(unittest.TestCase):
     def check_case(self,case):
         result=subprocess.run([str(self.exe),str(case)],text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+    def test_position_cycles_left_center_right(self):self.check_case(7)
+    def test_queued_position_cycles_keep_every_click(self):self.check_case(8)
+    def test_position_and_full_requests_preserve_order(self):self.check_case(9)
     def test_saved_fullscreen_is_respected_and_has_return_path(self):self.check_case(0)
     def test_left_minimap_returns_without_rewriting_saved_option(self):self.check_case(1)
     def test_right_minimap_returns_without_rewriting_saved_option(self):self.check_case(2)

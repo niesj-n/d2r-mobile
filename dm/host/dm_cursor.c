@@ -1913,15 +1913,46 @@ static void ui_bind_pump(uint64_t root, uint64_t fr) {
 // Changing only the config value without calling the callback leaves the picture unchanged. Here the callback is called directly: pass 0 to switch to fullscreen, pass the config value to switch back (left / right as the player chose on the options page); the config object itself is untouched, so nothing is persisted and the next run follows the player's setting.
 // The controller has no key for switching this mode (the map key − only opens / closes).
 static _Atomic int g_map_req = -1, g_map_full_now, g_map_center_req;
-enum { MAP_REQ_TOGGLE = 2 };
-void dm_ui_map_full(int on) { atomic_store(&g_map_req, on != 0); }
+enum { MAP_REQ_TOGGLE = 2, MAP_REQ_POSITION = 3 };
+#if defined(__ANDROID__)
+static pthread_mutex_t g_map_commands_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_map_commands[64];
+static unsigned g_map_command_count;
+static void map_queue_command(int command) {
+    pthread_mutex_lock(&g_map_commands_lock);
+    if (g_map_command_count < 64) g_map_commands[g_map_command_count++] = command;
+    pthread_mutex_unlock(&g_map_commands_lock);
+}
+static unsigned map_take_commands(int out[64]) {
+    pthread_mutex_lock(&g_map_commands_lock);
+    unsigned count = g_map_command_count;
+    memcpy(out, g_map_commands, count * sizeof *out); g_map_command_count = 0;
+    pthread_mutex_unlock(&g_map_commands_lock);
+    return count;
+}
+#endif
+void dm_ui_map_full(int on) {
+#if defined(__ANDROID__)
+    map_queue_command(on != 0);
+#else
+    atomic_store(&g_map_req, on != 0);
+#endif
+}
 void dm_ui_map_toggle(void) {
+#if defined(__ANDROID__)
+    map_queue_command(MAP_REQ_TOGGLE); return;
+#endif
     int pending = atomic_load(&g_map_req);
     for (;;) {
         // Preserve relative tap parity until the guest thread observes the actual map state.
         int next = pending < 0 ? MAP_REQ_TOGGLE : pending == MAP_REQ_TOGGLE ? -1 : !pending;
         if (atomic_compare_exchange_weak(&g_map_req, &pending, next)) return;
     }
+}
+void dm_ui_map_cycle_position(void) {
+#if defined(__ANDROID__)
+    map_queue_command(MAP_REQ_POSITION);
+#endif
 }
 int dm_ui_map_is_full(void) { return atomic_load(&g_map_full_now); }
 void dm_ui_map_recenter(void) { atomic_store(&g_map_center_req, 1); }
@@ -1958,6 +1989,9 @@ static void ui_map_pump(module_t *m) {
     // Discard out-of-game requests instead of calling the map callback or carrying them into the next game.
     if (!dm_uiscreen_ingame()) {
         int pending = atomic_exchange(&g_map_req, -1);
+#if defined(__ANDROID__)
+        int unused[64]; if (map_take_commands(unused)) pending = 1;
+#endif
         atomic_store(&g_map_full_now, 0);
         atomic_store(&g_map_center_req, 0);
         if (pending >= 0) { static int n; if (n++ < 4) LOG("地图：局外切换请求已忽略（地图尚未就绪）"); }
@@ -1988,22 +2022,32 @@ static void ui_map_pump(module_t *m) {
           LOG("地图：触屏模式读到「透视地图尺寸」是全屏（0）→ 改回微缩地图放右（2），小地图恢复"); }
 #endif
     }
-    int r = atomic_exchange(&g_map_req, -1);
-    if (r == MAP_REQ_TOGGLE) r = mini != 0;
 #if defined(__ANDROID__)
-    static int last_mini = 2;
-    if (cfg == 1 || cfg == 2) last_mini = cfg;
-    // The size button is temporary; only the original options page owns the saved AutoMapMode.
-    if (r >= 0 && cfg >= 0 && cfg <= 2) {
-        int want = r ? 0 : last_mini;
-        if ((mini == 0) != (want == 0)) {
-            ((void (*)(int))(m->base + 0x40f780))(want);
+    static int last_mini;
+    int mode = mini ? (*(volatile int32_t *)(m->base + 0x2d5e8f0) ? 1 : 2) : 0;
+    int initial_mode = mode;
+    if (mode == 1 || mode == 2) last_mini = mode;
+    if (last_mini != 1 && last_mini != 2) last_mini = cfg == 1 ? 1 : 2;
+    int commands[64]; unsigned count = map_take_commands(commands);
+    if (cfg >= 0 && cfg <= 2) {
+        for (unsigned i = 0; i < count; ++i) {
+            int command = commands[i];
+            if (command == MAP_REQ_POSITION) mode = mode == 1 ? 0 : mode == 0 ? 2 : 1;
+            else if (command == MAP_REQ_TOGGLE) mode = mode == 0 ? last_mini : 0;
+            else mode = command ? 0 : last_mini;
+            if (mode == 1 || mode == 2) last_mini = mode;
+        }
+        if (mode != initial_mode) {
+            // One final guest callback; the queue preserves clicks and absolute/relative ordering.
+            ((void (*)(int))(m->base + 0x40f780))(mode);
             mini = *(volatile int32_t *)(m->base + 0x2d5c748);
-            LOG("地图：临时尺寸 %d（玩家设置 %d 保持不变）", want, cfg);
+            LOG("地图快捷位置：%s（启动选项 %d 不改）", mode == 0 ? "中" : mode == 1 ? "左" : "右", cfg);
         }
     }
     atomic_store(&g_map_full_now, mini == 0 && cfg >= 0 && cfg <= 2);
 #else
+    int r = atomic_exchange(&g_map_req, -1);
+    if (r == MAP_REQ_TOGGLE) r = mini != 0;
     if (r >= 0) {
         if (cfg != 1 && cfg != 2) { static int n; if (n++ < 4) LOG("地图切换：玩家的「透视地图尺寸」是 %d（不是微缩档），不切", cfg); }
         else if ((mini == 0) != r) { ((void (*)(int))(m->base + 0x40f780))(r ? 0 : cfg); mini = *(volatile int32_t *)(m->base + 0x2d5c748); LOG("地图切换：→ %s（配置值 %d 不动，不落盘）", r ? "全屏" : cfg == 1 ? "微缩放左" : "微缩放右", cfg); }
