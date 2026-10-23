@@ -1232,6 +1232,27 @@ def _custom_selector_row(i, key, label):
             '        { "type": "ButtonWidget", "name": "TouchCustom_%s_prev", "fields": { "rect": { "x": 1010, "y": %d, "width": 70, "height": 70 }, "filename": "PANEL\\\\Stash\\\\Stash_LeftArrow", "normalFrame": 0, "pressedFrame": 2, "hoveredFrame": 1, "disabledFrame": 3, "onClickMessage": "PanelManager:ClosePanel:TouchCustom_%s_prev" } },\n'
             '        { "type": "TextBoxWidget", "name": "TouchCustom_%s_value", "fields": { "rect": { "x": 1090, "y": %d, "width": 210, "height": 70 }, "text": "%s", "style": { "pointSize": 42, "fontColor": "$PanelTitleColor", "alignment": { "h": "center", "v": "center" } } } },\n'
             '        { "type": "ButtonWidget", "name": "TouchCustom_%s_next", "fields": { "rect": { "x": 1315, "y": %d, "width": 70, "height": 70 }, "filename": "PANEL\\\\Stash\\\\Stash_RightArrow", "normalFrame": 0, "pressedFrame": 2, "hoveredFrame": 1, "disabledFrame": 3, "onClickMessage": "PanelManager:ClosePanel:TouchCustom_%s_next" } },\n') % (key, y, _CUSTOM_LINE_H, label, key, cy, key, key, cy, value, key, cy, key)
+
+def _custom_margin_row(i, key, label):
+    # Original sound-options slider art/children and native drag input. Its
+    # range is set by dm_custom only after checking the native widget class;
+    # SliderWidget has no JSON min/max/value fields in 3.3.94012.
+    y = _CUSTOM_Y[i]; cy = y + (_CUSTOM_LINE_H - 72) // 2
+    nodes = [
+        {'type': 'TextBoxWidget', 'name': 'TouchCustom_' + key + '_Text', 'fields': {
+            'rect': {'x': 0, 'y': y, 'width': 700, 'height': _CUSTOM_LINE_H}, 'text': label, 'style': '$StyleSettingsText'}},
+        {'type': 'TextBoxWidget', 'name': 'TouchCustom_' + key + '_value', 'fields': {
+            'rect': {'x': 730, 'y': cy, 'width': 100, 'height': 72}, 'text': '0',
+            'style': {'pointSize': 42, 'fontColor': '$PanelTitleColor', 'alignment': {'h': 'center', 'v': 'center'}}}},
+        {'type': 'SettingsSliderWidget', 'name': 'TouchCustom_' + key, 'fields': {
+            'rect': {'x': 900, 'y': cy, 'width': 480, 'height': 72}, 'isHorizontal': True, 'increment': 1,
+            'focusIndicatorPadding': '$OptionsSliderFocusIndicatorPadding',
+            'focusIndicatorFilename': '$OptionsSliderFocusIndicatorFilename',
+            'indicatorFilepath': 'PauseMenu/HorizontalIndicator', 'background': '$SettingsSliderBackground',
+            'leftButton': '$SettingsSliderLeftButtonFields', 'rightButton': '$SettingsSliderRightButtonFields',
+            'onUpdateMessage': 'TouchCustomSliderMessage:' + key}}
+    ]
+    return ''.join('        ' + json.dumps(node, ensure_ascii=False) + ',\n' for node in nodes)
 # 语言开关（第一行，普通行）：五项单选「中文 / English / Español / Русский / 한국어」，下次启动生效（宿主 dm_custom.c 的 lang、hle_fs.c settings_lang_apply）。
 # 「重启游戏后生效」那句先放在屏外，勾选与当前语言不一致时宿主挪到这一行文字的下半（横坐标取标签的）
 _CUSTOM_LANG_HINT = ''.join('        { "type": "TextBoxWidget", "name": "TouchCustomLangHint%s", "fields": { "rect": { "x": 99999, "y": %d, "width": 1400, "height": 60 }, "text": "@dmCustomLangHint%s", "style": "$StyleSettingsText", "style/fontFace": "BlizzardGlobal" } },\n'
@@ -1296,7 +1317,7 @@ def _custom_page(text):
            '            { "type": "TableWidget", "name": "OptionsTable", "fields": { "columns": [ "$OptionsTableColumn1", "$OptionsTableColumn2" ], "rowHeight": %d }, "children": [\n' % _CUSTOM_TITLE_H
            + title + '            ] },\n'
            + '            { "type": "Widget", "name": "TouchCustomRows", "fields": { "rect": { "x": 0, "y": 0, "width": 1500, "height": %d } }, "children": [\n' % _CUSTOM_H
-           + _custom_lang_row() + ''.join((_custom_selector_row(i, k, l) if _CUSTOM_ANDROID and k in ('eco_fps', 'render_scale', 'touch_margin_left', 'touch_margin_right') else _custom_q3d_row(i, k) if k in ('voice', 'q3d', 'touch_swap_above') else _custom_toggle_row(i, k, l)) for i, (k, l) in enumerate(_CUSTOM_ALL) if i) + _CUSTOM_LANG_HINT
+           + _custom_lang_row() + ''.join((_custom_margin_row(i, k, l) if _CUSTOM_ANDROID and k in ('touch_margin_left', 'touch_margin_right') else _custom_selector_row(i, k, l) if _CUSTOM_ANDROID and k in ('eco_fps', 'render_scale') else _custom_q3d_row(i, k) if k in ('voice', 'q3d', 'touch_swap_above') else _custom_toggle_row(i, k, l)) for i, (k, l) in enumerate(_CUSTOM_ALL) if i) + _CUSTOM_LANG_HINT
            + ''.join('        { "type": "TextBoxWidget", "name": "TouchCustomTest%d_Text", "fields": { "rect": { "x": 0, "y": %d, "width": 1000, "height": %d }, "text": "@KeyBindingTypeCustom", "style": "$StyleSettingsText" } },\n'
                      % (n, _CUSTOM_Y[len(_CUSTOM_ALL) + n], _CUSTOM_LINE_H) for n in range(_CUSTOM_TEST_ROWS)) + _custom_driver_button() +
            # 手柄模式的选中框（同符文之语清单 TouchRwSel）：框住十字键选中的那一行，宿主摆（dm_custom.c）；触屏模式一直在屏外（只把 x 挪出去、y 留在内容范围内：滚动区按子控件的范围算内容高度，y 放到 99999 会把可滚范围撑到十万）。和各行在同一个容器里，跟着滚

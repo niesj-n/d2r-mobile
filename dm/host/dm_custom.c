@@ -115,6 +115,7 @@ int dm_custom_android_read_applied(int out[3]) {
     return 1;
 }
 static int android_selector(int i) { return i == K_RENDER || i == K_ECO || i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT; }
+static int android_margin(int i) { return i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT; }
 static int android_selector_step(int i, int current, int direction) {
     if (i == K_RENDER) return dm_android_render_scale_step(current, direction);
     if (i == K_ECO) return dm_android_fps_step(current, direction);
@@ -301,6 +302,26 @@ static void set_toggle(uint64_t w, int on) {
     *(uint8_t *)(w + 0xa88) = on != 0; memcpy((void *)(w + 0x6e8), fr[on != 0], sizeof fr[0]); *(int32_t *)(w + 0x610) = fr[on != 0][0];
 }
 #ifdef __ANDROID__
+/* 3.3.94012 original NSO: SliderWidget metadata at main+0x20ba178 has
+ * increment, but no JSON min/max/value fields. main+0xad7028 clamps against
+ * +0x5bc(min), +0x5c0(max), +0x5b8(cap), writes +0x5c4(current), and moves the
+ * indicator at +0x580. Original OptionsPanel at main+0xae8098 reads +0x5c4.
+ * Use that setter with both notification flags false when restoring pending
+ * state. The unmodified dm_cursor horizontal drag uses native hit tests and
+ * mouse input; its normal setter updates are read by this page's pump. */
+static void margin_slider_set(uint8_t *b, uint64_t w, int value) {
+    if (!DM_WIDGET_OK(b, w, DM_VT_SETTINGS_SLIDER, "边距滑块")) return;
+    int reset_range = *(int32_t *)(w + 0x5bc) != 0 || *(int32_t *)(w + 0x5c0) != 96 || *(int32_t *)(w + 0x5b8) != 96;
+    value = margin_clamp(value);
+    *(int32_t *)(w + 0x5bc) = 0;
+    *(int32_t *)(w + 0x5c0) = *(int32_t *)(w + 0x5b8) = 96;
+    /* The constructor centers the indicator while current starts at zero.
+     * The setter returns early for an unchanged value: force a silent move
+     * when changing the range, so a zero default is drawn at the left end. */
+    void (*set)(uint64_t, int, int, int) = (void (*)(uint64_t, int, int, int))(b + 0xad7028);
+    if (reset_range && *(int32_t *)(w + 0x5c4) == value) set(w, value == 0 ? 96 : 0, 0, 0);
+    set(w, value, 0, 0);
+}
 static void selector_text(uint8_t *b, uint64_t w, const char *text) {
     if (!DM_WIDGET_OK(b, w, DM_VT_TEXT, "设置选择")) return;
     size_t n = strlen(text);
@@ -337,12 +358,13 @@ void dm_custom_ui_pump(unsigned long long root) {
           if (ev & DM_BTN_DOWN) sel = sel + 1 < NK ? sel + 1 : sel; else if (ev & DM_BTN_UP) sel = sel > 0 ? sel - 1 : 0;
           snprintf(nm, sizeof nm, "TouchCustom_%s", k_keys[sel]); cw = find_w(sp, sel == 0 ? k_lang_box[LANG_N - 1] : nm, 0); snprintf(nm, sizeof nm, "TouchCustom_%s_Text", k_keys[sel]); tw = find_w(sp, nm, 0);   // 语言行：框住标签到最右那一格 | Language row: box from the label to the rightmost cell
 #ifdef __ANDROID__
-          if (android_selector(sel)) { snprintf(nm, sizeof nm, "TouchCustom_%s_next", k_keys[sel]); cw = find_w(sp, nm, 0);
+          if (android_selector(sel)) { if (!android_margin(sel)) { snprintf(nm, sizeof nm, "TouchCustom_%s_next", k_keys[sel]); cw = find_w(sp, nm, 0); }
               int dir = (ev & DM_BTN_LEFT) ? -1 : (ev & (DM_BTN_RIGHT | DM_BTN_A)) ? 1 : 0;
               if (dir) { int pd = atomic_load(&g_pend[sel]);
                   int current = pd >= 0 ? pd : atomic_load(&g_val[sel]);
                   int next = sel == K_ECO ? (dir < 0 ? 1 : 0) : android_selector_step(sel, current, dir);
-                  atomic_store(&g_pend[sel], next); } }
+                  atomic_store(&g_pend[sel], next);
+                  if (android_margin(sel)) margin_slider_set(main_base(), cw, next); } }
 #endif
           if ((ev & DM_BTN_A) && cw && dm_wref_get(&seen[sel]) == cw) {
 #ifdef __ANDROID__
@@ -376,6 +398,15 @@ void dm_custom_ui_pump(unsigned long long root) {
           for (int k = 0; k < LANG_N; k++) if (TOGGLED(bx[k]) != (k == to)) set_toggle(bx[k], k == to); } }
     for (int i = 1; i < NK; i++) {
 #ifdef __ANDROID__
+        if (android_margin(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s", k_keys[i]); uint64_t slider = find_w(sp, name, 0);
+            if (!slider || !*(uint8_t *)(slider + 0x50) || !DM_WIDGET_OK(main_base(), slider, DM_VT_SETTINGS_SLIDER, "边距滑块")) continue;
+            int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);
+            if (dm_wref_get(&seen[i]) != slider) { margin_slider_set(main_base(), slider, shown); dm_wref_set(&seen[i], slider); }
+            else { int current = margin_clamp(*(int32_t *)(slider + 0x5c4));
+                if (current != shown) { shown = current; atomic_store(&g_pend[i], current); } }
+            snprintf(name, sizeof name, "TouchCustom_%s_value", k_keys[i]); uint64_t value = find_w(sp, name, 0);
+            char text[20]; snprintf(text, sizeof text, "%d", shown); if (value) selector_text(main_base(), value, text);
+            continue; }
         if (android_selector(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s_value", k_keys[i]); uint64_t value = find_w(sp, name, 0);
             int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);
             char text[20]; if (i == K_RENDER) snprintf(text, sizeof text, "%.2f×", dm_android_render_scale_value(shown));

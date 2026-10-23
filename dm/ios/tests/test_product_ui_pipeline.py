@@ -85,6 +85,17 @@ class ProductPipeline(unittest.TestCase):
                 self.assertEqual(sort['fields']['onClickMessage'], 'PanelManager:ClosePanel:TouchProductSort')
                 self.assertEqual(sum(c.get('name') == 'TouchProductSort' for c in root['children']), 1)
 
+    def test_sort_matches_native_store_art_and_dimensions(self):
+        inventory = layout_patch.load_text(self.final[INV])
+        store = named(inventory, 'TouchStore')['fields']
+        for path in (INV, BANK):
+            sort = named(layout_patch.load_text(self.final[path]), 'TouchProductSort')['fields']
+            self.assertEqual(sort['filename'], store['filename'])
+            self.assertEqual(sort['rect']['width'], store['rect']['width'])
+            self.assertEqual(sort['rect']['scale'], store['rect']['scale'])
+            self.assertEqual(sort['rect']['height'], 92)
+            self.assertEqual(sort['pointSize'], 40)
+
     def test_inventory_sort_has_exclusive_click_space(self):
         root = layout_patch.load_text(self.final[INV])
         sort = bounds(named(root, 'TouchProductSort'), self.romfs)
@@ -96,7 +107,8 @@ class ProductPipeline(unittest.TestCase):
         # Original inventory grid (98-unit cells), gold backing and panel edge
         # measured from the actual 3.3.94012 controller inheritance/profile.
         for name, rect in (('grid', (216, 893, 1196, 1285)),
-                           ('gold frame', (512, 1294, 906, 1422))):
+                           ('gold frame', (512, 1294, 906, 1422)),
+                           ('four-slot belt', (452, 750, 844, 848))):
             self.assertFalse(overlaps(sort, rect), name)
         profile = layout_patch.load_text(touch_layout.read_layout(self.romfs, 'controller/_profileconsolehd.json')[1])
         panel = profile['ConsoleRightPanelRect']

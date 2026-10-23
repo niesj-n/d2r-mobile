@@ -39,10 +39,15 @@ for voice in (False, True):
                 visit(child)
     visit(page)
     for key in added[:2]:
-        for direction in ("prev", "next"):
-            name = f"TouchCustom_{key}_{direction}"
-            assert nodes[name]["type"] == "ButtonWidget"
-            assert nodes[name]["fields"]["onClickMessage"] == "PanelManager:ClosePanel:" + name
+        name = f"TouchCustom_{key}"
+        assert nodes[name]["type"] == "SettingsSliderWidget"
+        fields = nodes[name]["fields"]
+        assert fields["isHorizontal"] is True and fields["increment"] == 1
+        assert fields["indicatorFilepath"] == "PauseMenu/HorizontalIndicator"
+        assert fields["onUpdateMessage"] == "TouchCustomSliderMessage:" + key
+        assert fields["leftButton"] == "$SettingsSliderLeftButtonFields"
+        assert fields["rightButton"] == "$SettingsSliderRightButtonFields"
+        assert not any(f"TouchCustom_{key}_{direction}" in nodes for direction in ("prev", "next"))
         assert nodes[f"TouchCustom_{key}_value"]["fields"]["text"] == "0"
         assert nodes[f"TouchCustom_{key}_Text"]["fields"]["text"] == "@" + layout._custom_key(key)
     assert nodes["TouchCustom_perf_overlay"]["type"] == "ToggleButtonWidget"
@@ -51,4 +56,4 @@ for voice in (False, True):
         row = next(r for r in dm_i18n.rows() if r[0] == layout._custom_key(key))
         assert all(row[1:])
     assert nodes["TouchCustomRows"]["fields"]["rect"]["height"] == layout._CUSTOM_H
-print("PASS Android appended Custom margin selectors, monitor checkbox and localized labels, with/without voice")
+print("PASS Android appended Custom margin sliders, monitor checkbox and localized labels, with/without voice")
