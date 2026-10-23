@@ -19,6 +19,10 @@ JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeAction(JNIEnv *
     (void)env; (void)cls;
     dm_android_touch_action(action);
 }
+JNIEXPORT jboolean JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeGameplay(JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    return dm_android_touch_gameplay();
+}
 JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeLayout(JNIEnv *env, jclass cls, jfloatArray dst) {
     (void)cls;
     if (!dst || (*env)->GetArrayLength(env,dst)<DM_ANDROID_TOUCH_DRAW_FLOATS) return;

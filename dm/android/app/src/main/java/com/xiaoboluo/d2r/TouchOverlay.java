@@ -36,6 +36,7 @@ public final class TouchOverlay extends View {
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
     private static native void nativeAction(int action);
+    private static native boolean nativeGameplay();
     private static native void nativeLayout(float[] out);
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -51,7 +52,7 @@ public final class TouchOverlay extends View {
             if (!running) return;
             if (inputEnabled && isShown()) {
                 nativeLayout(probe);
-                publishGameplay(probe[2]==0);
+                publishGameplay(nativeGameplay());
                 if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
             } else publishGameplay(false);
             Choreographer.getInstance().postFrameCallback(this);

@@ -22,6 +22,9 @@ enum { DM_ANDROID_ACTION_RUN=1, DM_ANDROID_ACTION_MAP_VISIBILITY=2,
        DM_ANDROID_ACTION_MAP_SIZE=3, DM_ANDROID_ACTION_MAP_CENTER=4 };
 #define dm_android_touch_action(action) ((void)(action))
 #endif
+#ifndef DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE
+#define dm_android_touch_gameplay() (0)
+#endif
 
 _Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 185, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
@@ -510,6 +513,19 @@ static void test_android_map_actions_and_mode_gate(void) {
     REQUIRE((queue_sample()&DM_BTN_LS)==0);
 }
 
+static void test_android_gameplay_visibility_gate(void) {
+    fixture(0);
+    REQUIRE(!dm_android_touch_gameplay());
+    scene.game=1;
+    REQUIRE(dm_android_touch_gameplay());
+    frontend=1; REQUIRE(!dm_android_touch_gameplay());
+    frontend=0; dm_tc_set_navigation_mode(&tc,1);
+    REQUIRE(!dm_android_touch_gameplay());
+    dm_tc_set_navigation_mode(&tc,0);
+    dm_android_touch_focus(0);
+    REQUIRE(!dm_android_touch_gameplay());
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
@@ -536,6 +552,7 @@ int main(void) {
     run_case("margin_relayout_cancels_touch", test_margin_relayout_cancels_touch);
     run_case("android_action_edges_are_not_merged", test_android_action_edges_are_not_merged);
     run_case("android_map_actions_and_mode_gate", test_android_map_actions_and_mode_gate);
+    run_case("android_gameplay_visibility_gate", test_android_gameplay_visibility_gate);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }
