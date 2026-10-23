@@ -832,6 +832,9 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
         fixture(0); scene.game=1; observed_swap_above=above;
         dm_android_touch_tablet(n==4);
         dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16); REQUIRE(queue_sample()==0);
+        /* The actual Android gameplay route hides the legacy top-right map
+         * target; the separately owned upper-left quick icon replaces it. */
+        dm_tc_enable_targets(&tc,tc.enabled_targets & ~(1u<<DM_TC_MAP));
         float a[DM_ANDROID_TOUCH_DRAW_FLOATS], b[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(a);
         dm_tc_target old_main=tc.layout.target[DM_TC_MAIN];
         dm_android_touch_margins(large_margin?96:0,large_margin?96:0); REQUIRE(queue_sample()==0); read_twice(b);
@@ -841,15 +844,15 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             if (i>0) {
                 REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
                 float k=dm_tc_scale_for_size(width,height);
-                REQUIRE(q.r==tc.layout.target[DM_TC_SKILL1].r);
-                REQUIRE(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)<=200*k);
-                if (!above) REQUIRE(fabsf(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)-186*k)<.01f);
+                REQUIRE(q.r==18*k && q.r<tc.layout.target[DM_TC_SKILL1].r);
+                REQUIRE(q.x>=tc.layout.target[DM_TC_MAIN].x-100*k);
             } else {
                 REQUIRE(b[o]>=a[o] && q.x<tc.layout.width*.5f && q.y<tc.layout.height*.25f);
             }
             REQUIRE(b[o]==q.x && b[o+1]==q.y && b[o+2]==q.r && b[o+3]==1);
             REQUIRE(q.x-q.r>=20 && q.x+q.r<=tc.layout.width-24 && q.y-q.r>=0 && q.y+q.r<tc.layout.height-16);
             for (int t=0;t<DM_TC_COUNT;++t) {
+                if (!(tc.enabled_targets & (1u<<t))) continue;
                 dm_tc_target r=tc.layout.target[t];
                 REQUIRE(hypotf(q.x-r.x,q.y-r.y)>q.r+r.r+1);
             }
@@ -872,7 +875,9 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
         }
         REQUIRE(map_position_calls==1 && loot_filter_requests==1);
         dm_tc_target first=quick_circle(1), second=quick_circle(2);
-        REQUIRE(hypotf(first.x-second.x,first.y-second.y)<64*dm_tc_scale_for_size(width,height));
+        REQUIRE(fabsf(first.y-second.y)<.001f);
+        REQUIRE(fabsf(second.x-first.x-56*dm_tc_scale_for_size(width,height))<.001f);
+        REQUIRE(first.y+first.r<tc.layout.target[DM_TC_PORTAL].y-tc.layout.target[DM_TC_PORTAL].r);
         /* Default 48dp monitor offset leaves room for a 44dp phone target in
            the top strip. Tablet scaling falls back beside the panel. */
         dm_android_touch_obstructions(0,30,48,314,212); REQUIRE(queue_sample()==0);
@@ -883,7 +888,7 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             REQUIRE(fabsf(top_map.x-(20+(large_margin?96:0)+26))<.001f);
             REQUIRE(top_map.y==26 && top_map.y+top_map.r==48);
         } else REQUIRE(top_map.x-top_map.r>=324 && fabsf(top_map.y-top_map.r-48)<.001f);
-        REQUIRE(fabsf(b[190]-b[195])>40 && fabsf(b[191]-b[196])>10);
+        REQUIRE(fabsf(b[190]-b[195])>40 && fabsf(b[191]-b[196])<.001f);
         printf("DETAIL quick_geometry size=%.3fx%.0f above=%d margin96=%d main=%.2f,%.2f map=%.2f,%.2f;r=%.2f position=%.2f,%.2f;r=%.2f filter=%.2f,%.2f;r=%.2f\n",
             sizes[n][0],sizes[n][1],above,large_margin,tc.layout.target[DM_TC_MAIN].x,tc.layout.target[DM_TC_MAIN].y,
             b[185],b[186],b[187],b[190],b[191],b[192],b[195],b[196],b[197]);

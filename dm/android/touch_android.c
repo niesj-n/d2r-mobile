@@ -307,15 +307,18 @@ static dm_tc_target quick_circle(int index) {
         }
         return (dm_tc_target){fminf(x,right-r),y,r,0};
     }
-    const dm_tc_target *main=&tc.layout.target[DM_TC_MAIN];
-    if (tc.layout.swap_above) {
-        /* Use the default set-switch opening when I/II is moved to the left. */
-        float dx=index==1 ? -38 : -96, dy=index==1 ? -156 : -170;
-        return (dm_tc_target){main->x+dx*k,main->y+dy*k,26*k,0};
+    const dm_tc_target *portal=&tc.layout.target[DM_TC_PORTAL];
+    /* Auxiliary controls form a quiet, aligned row over the existing fan;
+     * they no longer extend the combat arc toward the middle of the screen. */
+    float r=18*k, y=portal->y-70*k;
+    float x=portal->x-(index==1 ? 56 : 0)*k;
+    if (y-r<safe_top+4*k) {
+        /* Compact tablet windows have no row above the portal. Keep both
+         * circles together to its left, clear of the original combat slots. */
+        y=fmaxf(safe_top+4*k+r,portal->y);
+        x=portal->x-(index==1 ? 112 : 56)*k;
     }
-    /* Continue the I/II/portal arc with skill-size sockets and close spacing. */
-    float angle=(index==1 ? -120.0f : -138.0f)*(3.14159265358979323846f/180.0f);
-    return (dm_tc_target){main->x+186*k*cosf(angle),main->y+186*k*sinf(angle),26*k,0};
+    return (dm_tc_target){x,y,r,0};
 }
 static int quick_visible(void) {
     return focused && ready && scene.game && !frontend && !tc.navigation_mode &&

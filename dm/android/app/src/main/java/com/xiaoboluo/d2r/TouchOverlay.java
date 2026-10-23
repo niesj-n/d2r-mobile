@@ -44,7 +44,7 @@ public final class TouchOverlay extends View {
     private final int[] monitorStyleProbe = new int[2], appliedMonitorStyle = {-1, -1};
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private static final int GLYPHS=119, HUD=167, QUICK=185, DRAW_FLOATS=200;
+    private static final int GLYPHS=119, HUD=167, QUICK=185, AIM=200, CANCEL=230, DRAW_FLOATS=235;
     private final float[] layout = new float[DRAW_FLOATS];
     // 每个刷新周期比较完整绘图快照；坐标、可见性、按下状态与技能组任一变化才重画。
     // The native layout is checked once per refresh; the view redraws only when it differs from what was last drawn
@@ -68,7 +68,6 @@ public final class TouchOverlay extends View {
     private final float[] rawX = new float[16], rawY = new float[16];
     private final String[] gameLabels, menuLabels;
     private final String[] quickLabels;
-    private final String[][] quickLabelLines;
     private final File overlayRoot;
     private final HashMap<String,Bitmap> images=new HashMap<>(), art=new HashMap<>(), glyphs=new HashMap<>();
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
@@ -125,12 +124,6 @@ public final class TouchOverlay extends View {
         this.menuLabels = menuLabels == null ? new String[5] : menuLabels.clone();
         quickLabels = new String[] {context.getString(R.string.dmAndroidMapVisibilityShort),
                 context.getString(R.string.dmAndroidMapPositionShort), context.getString(R.string.dmAndroidLootFilterShort)};
-        quickLabelLines=new String[quickLabels.length][];
-        for (int i=0;i<quickLabels.length;++i) {
-            String value=quickLabels[i]; int split=value.indexOf(' ');
-            if (split<0 && value.codePointCount(0,value.length())==4) split=value.offsetByCodePoints(0,2);
-            quickLabelLines[i]=split>0 ? new String[]{value.substring(0,split),value.substring(split).trim()} : new String[]{value};
-        }
         lifeFormat=context.getString(R.string.dmHudLife); manaFormat=context.getString(R.string.dmHudMana);
         levelFormat=context.getString(R.string.dmAndroidHudLevel); cancelLabel=context.getString(R.string.dmTcCancel);
         overlayRoot=new File(context.getFilesDir(),"dm/overlay");
@@ -398,21 +391,81 @@ public final class TouchOverlay extends View {
             bitmapPaint.setAlpha(255);
         } else caption(canvas,quickLabels[0],x,y-6,10,held?1:.84f);
     }
-    private void quickSkillControl(Canvas canvas,float x,float y,float r,boolean held,String[] lines) {
+    private static void utilitySymbol(Canvas c,float side,int kind) {
+        Paint p=stroke(0xffe4e4df,side*.055f);
+        p.setStrokeCap(Paint.Cap.ROUND); p.setStrokeJoin(Paint.Join.ROUND);
+        if (kind==1) {
+            Path map=new Path();
+            map.moveTo(side*.20f,side*.24f); map.lineTo(side*.40f,side*.17f);
+            map.lineTo(side*.60f,side*.24f); map.lineTo(side*.80f,side*.17f);
+            map.lineTo(side*.80f,side*.60f); map.lineTo(side*.60f,side*.67f);
+            map.lineTo(side*.40f,side*.60f); map.lineTo(side*.20f,side*.67f); map.close();
+            c.drawPath(map,p);
+            c.drawLine(side*.40f,side*.17f,side*.40f,side*.60f,p);
+            c.drawLine(side*.60f,side*.24f,side*.60f,side*.67f,p);
+            float y=side*.84f, left=side*.27f, right=side*.73f, a=side*.08f;
+            c.drawLine(left,y,right,y,p);
+            c.drawLine(left,y,left+a,y-a,p); c.drawLine(left,y,left+a,y+a,p);
+            c.drawLine(right,y,right-a,y-a,p); c.drawLine(right,y,right-a,y+a,p);
+        } else {
+            Path filter=new Path();
+            filter.moveTo(side*.20f,side*.24f); filter.lineTo(side*.80f,side*.24f);
+            filter.lineTo(side*.58f,side*.51f); filter.lineTo(side*.58f,side*.76f);
+            filter.lineTo(side*.42f,side*.85f); filter.lineTo(side*.42f,side*.51f); filter.close();
+            c.drawPath(filter,p); c.drawLine(side*.32f,side*.34f,side*.68f,side*.34f,p);
+        }
+    }
+    private void quickSkillControl(Canvas canvas,int kind,float x,float y,float r,boolean held,String text) {
         button(canvas,x,y,r,held,false,false);
-        paint.setTypeface(Typeface.DEFAULT_BOLD);
+        float icon=r*1.25f;
+        drawArt(canvas,"utility:"+kind,x-icon/2,y-icon/2,icon,(c,s,t,sc)->utilitySymbol(c,s,kind));
+        paint.setTypeface(Typeface.DEFAULT);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setColor(held?0xffffffff:0xffeeeeee);
-        float size=r*.45f; paint.setTextSize(size);
-        float widest=0;
-        for (String line:lines) widest=Math.max(widest,paint.measureText(line));
-        float lineHeight=paint.descent()-paint.ascent();
-        float fit=Math.min(1,Math.min(r*1.35f/Math.max(1,widest),r*1.25f/(lines.length*lineHeight)));
-        paint.setTextSize(size*fit);
-        lineHeight=paint.descent()-paint.ascent();
-        float baseline=y-lines.length*lineHeight*.5f-paint.ascent();
-        for (String line:lines) { canvas.drawText(line,x,baseline,paint); baseline+=lineHeight; }
+        paint.setColor(held?0xffffffff:0xffd6d1c5);
+        float size=r*.46f; paint.setTextSize(size);
+        paint.setTextSize(size*Math.min(1,r*2.9f/Math.max(1,paint.measureText(text))));
+        paint.setShadowLayer(1.5f,0,1,0xee000000);
+        canvas.drawText(text,x,y+r+2-paint.ascent(),paint);
+        paint.clearShadowLayer();
         paint.setTypeface(null);
+    }
+    /** Direction feedback uses the same native finger ownership as casting.
+     * Rotate the rim, keeping the imported skill glyph upright and recognizable. */
+    private void aimFeedback(Canvas canvas) {
+        for (int i=0;i<5;++i) {
+            int a=AIM+i*6, p=4+i*5;
+            if (layout[a]==0 || layout[p+3]==0) continue;
+            float x=layout[p],y=layout[p+1],r=layout[p+2];
+            float dx=layout[a+1],dy=layout[a+2],ux=layout[a+3],uy=layout[a+4];
+            boolean cancelling=layout[a+5]!=0;
+            int color=cancelling?0xffd7786c:0xffd6ccb5;
+            Paint rim=stroke(color,1.25f);
+            rim.setAlpha(cancelling?240:190);
+            canvas.drawCircle(x,y,r+7,rim);
+            // The native displacement is already radial-clamped to 18dp.
+            skill(canvas,i,x+dx,y+dy,r,true,false);
+            if (ux!=0 || uy!=0) {
+                float angle=(float)Math.toDegrees(Math.atan2(uy,ux));
+                canvas.save(); canvas.translate(x,y); canvas.rotate(angle);
+                float rr=r+8;
+                canvas.drawArc(new RectF(-rr,-rr,rr,rr),-32,64,false,rim);
+                Path arrow=new Path();
+                arrow.moveTo(rr+6,0); arrow.lineTo(rr-1,-4); arrow.lineTo(rr-1,4); arrow.close();
+                paint.setColor(color); canvas.drawPath(arrow,paint);
+                canvas.restore();
+            }
+        }
+        if (layout[CANCEL+3]!=0) {
+            float x=layout[CANCEL],y=layout[CANCEL+1],r=layout[CANCEL+2];
+            boolean hover=layout[CANCEL+4]!=0;
+            paint.setColor(hover?0xe08c211c:0xb33d1715); canvas.drawCircle(x,y,r,paint);
+            canvas.drawCircle(x,y,r-1,stroke(hover?0xffffb3a4:0xffb88676,hover?2:1));
+            Paint cross=stroke(hover?0xffffddd4:0xffd7b4a9,2); cross.setStrokeCap(Paint.Cap.ROUND);
+            float arm=r*.25f,cy=y-r*.16f;
+            canvas.drawLine(x-arm,cy-arm,x+arm,cy+arm,cross);
+            canvas.drawLine(x-arm,cy+arm,x+arm,cy-arm,cross);
+            caption(canvas,cancelLabel,x,y+r*.34f,r*.30f,1);
+        }
     }
     // skillImage：同帧位的银色剪影（无剪影图时退回原版图集、四边各裁 8%），保留明暗、统一为银灰。
     // skillImage: the silver silhouette at the same frame (without it, the original atlas trimmed 8% on each side), keeping the shading, all silver grey.
@@ -558,7 +611,11 @@ public final class TouchOverlay extends View {
             float x=layout[p], y=layout[p+1], r=layout[p+2];
             if (r<=0 || (i>5 && i<=10)) continue;
             boolean held=layout[p+4]!=0;
-            if(!navigation && i<=5) { skill(canvas,i,x,y,r,held,navigation); continue; }
+            if(!navigation && i<=5) {
+                if (i<5 && layout[AIM+i*6]!=0) button(canvas,x,y,r,false,false,i==0);
+                else skill(canvas,i,x,y,r,held,navigation);
+                continue;
+            }
             if(!navigation && i==13) { button(canvas,x,y,r,held,false,false); float ts=12*k; caption(canvas,label(i,false),x,y-ts*.65f,ts,held?1:.86f); continue; }
             // 其余圆钮：原版圆框图（按下更实）+ 图标或字。地图钮平时画原版地图图标（36×36 一格，按住第 1 格）；拖技能时变「取消」：暗红底 + 字。
             // Other buttons: the original circle image (more opaque when held) + icon or text. The map button draws the original map icon (36x36 frames,
@@ -573,7 +630,7 @@ public final class TouchOverlay extends View {
             if (navigation || layout[p+3]==0 || layout[p+2]<=0) continue;
             float r=layout[p+2];
             if (i==0) mapControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0);
-            else quickSkillControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabelLines[i]);
+            else quickSkillControl(canvas,i,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i]);
         }
         // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
         int jp=4+12*5;
@@ -584,6 +641,7 @@ public final class TouchOverlay extends View {
             drawArt(canvas,"stick:0:"+(active?1:0),tx-th,ty-th,2*th,(bc,side,t,sc)->joyThumbArt(bc,side,active));
         }
         hud(canvas);
+        if (!navigation) aimFeedback(canvas);
         canvas.restore();
     }
 }
