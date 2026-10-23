@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dmAndroidDiagnosticsTitle">Diagnostic logs</string>
+    <string name="dmAndroidDiagnosticsBusy">A diagnostic export is already in progress.</string>
+    <string name="dmAndroidDiagnosticsCancelled">Diagnostic export cancelled.</string>
+    <string name="dmAndroidDiagnosticsSaved">Diagnostics saved to:\n%1$s\n\nIncludes build, GPU/driver and bounded boot/performance logs. Nothing was sent automatically.</string>
+    <string name="dmAndroidDiagnosticsFailed">Could not save diagnostics: %1$s\nThe selected destination may contain an incomplete file. Please retry.</string>
+    <string name="dmAndroidDiagnosticsRequestLost">The app restarted while choosing a destination. Please export again.</string>
+</resources>

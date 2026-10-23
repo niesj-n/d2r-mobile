@@ -25,6 +25,7 @@
 #include "lifecycle_dispatch.h"
 #include "overlay_validate.h"
 #include "dm_overlay_contract.h"
+#include "diagnostics_android.h"
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -167,6 +168,7 @@ JNIEXPORT jint JNICALL Java_com_xiaoboluo_d2r_DmActivity_nativeStart(JNIEnv *env
     snprintf(p, sizeof p, "%s/out/main.patched.bin", g_runtime);
     if (access(p, R_OK)) snprintf(g_runtime, sizeof g_runtime, "%s/dm", g_ext);
     mkdirs(g_runtime);
+    dm_android_diagnostics_configure(g_runtime, DM_OVERLAY_SOURCE_SHA256, DM_ANDROID_SOURCE_REVISION);
     log_init();
     load_env_file(g_runtime);
     LOG("boot: 内部目录 %s，外部目录 %s，资源 %s，系统语言 %s", g_files, g_ext, g_src, lg);

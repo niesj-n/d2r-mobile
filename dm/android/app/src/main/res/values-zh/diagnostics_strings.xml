@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dmAndroidDiagnosticsTitle">诊断日志</string>
+    <string name="dmAndroidDiagnosticsBusy">正在导出诊断日志，请稍候。</string>
+    <string name="dmAndroidDiagnosticsCancelled">已取消导出诊断日志。</string>
+    <string name="dmAndroidDiagnosticsSaved">诊断日志已保存到：\n%1$s\n\n包含版本、GPU/驱动信息及有大小上限的启动和性能日志。未自动发送给任何人。</string>
+    <string name="dmAndroidDiagnosticsFailed">诊断日志保存失败：%1$s\n所选位置可能留有未完成的文件，请重试。</string>
+    <string name="dmAndroidDiagnosticsRequestLost">选择保存位置期间应用已重启，请重新导出。</string>
+</resources>

@@ -58,6 +58,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private static volatile int bootFailure;
     private AlertDialog inputDialog;
     private AlertDialog driverSettingsDialog;
+    private DiagnosticsExporter diagnosticsExporter;
     private static final int DRIVER_ZIP_PICKER = 0xD204;
 
     private SurfaceView view;
@@ -86,6 +87,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             finish(); return;
         }
         current = new WeakReference<>(this);
+        diagnosticsExporter = new DiagnosticsExporter(this);
         displays = getSystemService(DisplayManager.class);
         if (displays != null) displays.registerDisplayListener(this, null);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -158,6 +160,16 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         });
     }
 
+    private static void showNativeDiagnostics(String runtime, String metadata) {
+        DmActivity activity = current.get();
+        if (activity != null) activity.runOnUiThread(() -> {
+            if (activity.resumed && !activity.isFinishing() && !activity.isDestroyed()) {
+                activity.releaseTouches();
+                activity.diagnosticsExporter.begin(runtime, metadata);
+            }
+        });
+    }
+
     private void showDriverSettings() {
         if (!resumed || isFinishing() || isDestroyed() || inputDialog != null || driverSettingsDialog != null) return;
         releaseTouches();
@@ -194,6 +206,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (diagnosticsExporter != null && diagnosticsExporter.onActivityResult(request, result, data)) return;
         if (request != DRIVER_ZIP_PICKER || result != RESULT_OK || data == null || data.getData() == null) return;
         android.net.Uri uri = data.getData();
         new Thread(() -> {

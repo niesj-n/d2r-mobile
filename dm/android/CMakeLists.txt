@@ -79,6 +79,7 @@ set(ANDROID_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/driver_loader_android.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/front_android.c
   ${CMAKE_CURRENT_SOURCE_DIR}/perf_android.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/diagnostics_android.c
   ${CMAKE_CURRENT_SOURCE_DIR}/touch_android.c
   ${CMAKE_CURRENT_SOURCE_DIR}/vulkan_present.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/compat/clonefile.c
@@ -125,5 +126,52 @@ add_library(dm SHARED $<TARGET_OBJECTS:dm_app_main> ${CMAKE_CURRENT_SOURCE_DIR}/
 add_dependencies(dm hook_impl main_hook)
 target_include_directories(dm PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_definitions(dm PRIVATE $<$<CONFIG:Debug>:DM_ANDROID_DEBUG_ENV=1>)
+
+# Compiled native identity. Prebuilt JNI retains its own revision rather than inheriting the Java packager's checkout.
+find_package(Git QUIET)
+set(DM_SOURCE_REVISION "unknown")
+if(GIT_FOUND)
+  execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse HEAD WORKING_DIRECTORY ${DM_REPO_ROOT}
+    OUTPUT_VARIABLE source_revision RESULT_VARIABLE source_revision_rc OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(source_revision_rc EQUAL 0)
+    set(DM_SOURCE_REVISION "${source_revision}")
+    execute_process(COMMAND ${GIT_EXECUTABLE} status --porcelain --untracked-files=normal -- dm/android dm/host dm/gfx dm/ios/Sources
+      WORKING_DIRECTORY ${DM_REPO_ROOT} OUTPUT_VARIABLE source_dirty OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(source_dirty)
+      string(APPEND DM_SOURCE_REVISION "-dirty")
+    endif()
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --path-format=absolute --git-path HEAD
+      WORKING_DIRECTORY ${DM_REPO_ROOT} OUTPUT_VARIABLE source_head OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${source_head})
+    execute_process(COMMAND ${GIT_EXECUTABLE} symbolic-ref -q HEAD
+      WORKING_DIRECTORY ${DM_REPO_ROOT} OUTPUT_VARIABLE source_ref OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(source_ref)
+      execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --path-format=absolute --git-path ${source_ref}
+        WORKING_DIRECTORY ${DM_REPO_ROOT} OUTPUT_VARIABLE source_ref_path OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if(EXISTS "${source_ref_path}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${source_ref_path})
+      endif()
+    endif()
+  endif()
+endif()
+if(GIT_FOUND)
+  execute_process(COMMAND ${GIT_EXECUTABLE} ls-files dm/android dm/host dm/gfx dm/ios/Sources
+    WORKING_DIRECTORY ${DM_REPO_ROOT} OUTPUT_VARIABLE identity_sources OUTPUT_STRIP_TRAILING_WHITESPACE)
+  string(REPLACE "\n" ";" identity_sources "${identity_sources}")
+  string(REPLACE "\r" "" identity_sources "${identity_sources}")
+  list(FILTER identity_sources INCLUDE REGEX "\\.(c|h|cpp|S)$")
+  list(TRANSFORM identity_sources PREPEND "${DM_REPO_ROOT}/")
+  # Existing dependencies use paths containing /..; normalize before deduplication for Ninja.
+  get_property(identity_existing DIRECTORY PROPERTY CMAKE_CONFIGURE_DEPENDS)
+  list(APPEND identity_existing ${identity_sources})
+  set(identity_dependencies)
+  foreach(identity_file ${identity_existing})
+    get_filename_component(identity_absolute "${identity_file}" ABSOLUTE)
+    list(APPEND identity_dependencies "${identity_absolute}")
+  endforeach()
+  list(REMOVE_DUPLICATES identity_dependencies)
+  set_property(DIRECTORY PROPERTY CMAKE_CONFIGURE_DEPENDS ${identity_dependencies})
+endif()
+target_compile_definitions(dm PRIVATE DM_ANDROID_SOURCE_REVISION="${DM_SOURCE_REVISION}")
 target_link_libraries(dm PRIVATE -Wl,--whole-archive dmcore -Wl,--no-whole-archive android)
 target_link_options(dm PRIVATE -Wl,--no-undefined -Wl,-z,nostart-stop-gc -Wl,-Bsymbolic)   # 汇编按页寻址宿主全局（adrp + :lo12:）：库内符号就地绑定，不许被抢占 | assembly addresses host globals by page (adrp + :lo12:): symbols bind locally inside the library and cannot be preempted

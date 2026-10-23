@@ -5,10 +5,13 @@
 #include <jni.h>
 #include <android/log.h>
 #include <stdatomic.h>
+#include "diagnostics_android.h"
+#include <time.h>
 
 static JavaVM *vm;
 static jclass activity_class;
-static jmethodID show_input, report_failure, show_driver_settings;
+static jmethodID show_input, report_failure, show_driver_settings, show_diagnostics;
+static int diagnostics_pending;
 static pthread_mutex_t input_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t input_done = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t work_ready = PTHREAD_COND_INITIALIZER;
@@ -19,7 +22,7 @@ typedef struct input_job {
     struct input_job *next;
     jlong id;
     char *strings[4];
-    int max_chars, name_rule, numeric_max, failure_code, driver_settings;
+    int max_chars, name_rule, numeric_max, failure_code, driver_settings, diagnostics;
 } input_job;
 static input_job *jobs_head, *jobs_tail;
 
@@ -82,7 +85,18 @@ static void *input_worker(void *unused) {
         pthread_mutex_unlock(&input_lock);
         // 不持锁调用 Java：无 Activity 时 Java 会同步回调取消，持锁会死锁。
         // Never call Java while locked: the no-Activity path cancels synchronously.
-        if (job->driver_settings) {
+        if (job->diagnostics) {
+            struct timespec now;
+            uint64_t ns = clock_gettime(CLOCK_MONOTONIC, &now) ? 0 : (uint64_t)now.tv_sec * 1000000000ull + now.tv_nsec;
+            char snapshot[4096]; dm_android_diagnostics_snapshot(snapshot, sizeof snapshot, ns);
+            jstring runtime = utf8_string(env, dm_android_diagnostics_runtime());
+            jstring metadata = (*env)->ExceptionCheck(env) ? NULL : utf8_string(env, snapshot);
+            if (runtime && metadata && !(*env)->ExceptionCheck(env))
+                (*env)->CallStaticVoidMethod(env, activity_class, show_diagnostics, runtime, metadata);
+            if (runtime) (*env)->DeleteLocalRef(env, runtime);
+            if (metadata) (*env)->DeleteLocalRef(env, metadata);
+            pthread_mutex_lock(&input_lock); diagnostics_pending = 0; pthread_mutex_unlock(&input_lock);
+        } else if (job->driver_settings) {
             (*env)->CallStaticVoidMethod(env, activity_class, show_driver_settings);
         } else if (!job->id) {
             (*env)->CallStaticVoidMethod(env, activity_class, report_failure, job->failure_code);
@@ -119,7 +133,8 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *java_vm, void *reserved) {
         "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;III)V");
     report_failure = (*env)->GetStaticMethodID(env, activity_class, "showNativeFailure", "(I)V");
     show_driver_settings = (*env)->GetStaticMethodID(env, activity_class, "showNativeDriverSettings", "()V");
-    if (!show_input || !report_failure || !show_driver_settings) return JNI_ERR;
+    show_diagnostics = (*env)->GetStaticMethodID(env, activity_class, "showNativeDiagnostics", "(Ljava/lang/String;Ljava/lang/String;)V");
+    if (!show_input || !report_failure || !show_driver_settings || !show_diagnostics) return JNI_ERR;
     vm = java_vm;
     pthread_t worker;
     if (pthread_create(&worker, NULL, input_worker, NULL)) worker_state = -1;
@@ -128,6 +143,16 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *java_vm, void *reserved) {
 }
 
 /* Guest callbacks enqueue here; only the original-stack worker may enter ART. */
+void dm_android_diagnostics_request(void) {
+    input_job *job = calloc(1, sizeof *job);
+    if (!job) return;
+    job->diagnostics = 1;
+    pthread_mutex_lock(&input_lock);
+    if (worker_state >= 0 && !diagnostics_pending) { diagnostics_pending = 1; enqueue(job); job = NULL; }
+    pthread_mutex_unlock(&input_lock);
+    if (job) free_job(job);
+}
+
 void dm_android_driver_settings_request(void) {
     input_job *job = calloc(1, sizeof *job);
     if (!job) return;
