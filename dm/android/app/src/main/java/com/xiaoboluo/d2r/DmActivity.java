@@ -32,6 +32,7 @@ import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
@@ -46,9 +47,12 @@ import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DmActivity extends Activity implements SurfaceHolder.Callback, DisplayManager.DisplayListener {
-    static native int nativeStart(String filesDir, String extDir, String romfsSrc, String lang);
+    static native int nativeStart(String filesDir, String extDir, String romfsSrc, String lang,
+                                  String nativeLibDir, String driverDigest, String driverName);
     static native void nativeSurface(Object surface, int w, int h);
     static native void nativeRefresh(float hz);
     static native void nativeTouch(int n, int[] ids, float[] xs, float[] ys);
@@ -59,6 +63,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private static volatile int bootFailure;
     private AlertDialog inputDialog;
     private AlertDialog touchSettingsDialog;
+    private AlertDialog driverSettingsDialog;
+    private static final int DRIVER_ZIP_PICKER = 0xD204;
 
     private SurfaceView view;
     private FrameLayout gameFrame;
@@ -76,6 +82,11 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        try {
+            DriverPackageStore.cleanupIncomplete(getFilesDir());
+            if (DriverPackageStore.recoverFailedAttempt(getFilesDir()))
+                Toast.makeText(this, R.string.dmAndroidDriverRestored, Toast.LENGTH_LONG).show();
+        } catch (IOException e) { android.util.Log.e("dm-driver", "Could not recover driver attempt", e); }
         // 调试包：am start … --ez dmArtDump true 只把触屏控件底图写到 files/dm/artdump/ 就退出（dm/android/tools/art_compare.sh 用）
         // Debug builds: am start … --ez dmArtDump true only writes the touch control art to files/dm/artdump/ and exits (used by dm/android/tools/art_compare.sh)
         if (BuildConfig.DEBUG && getIntent().getBooleanExtra("dmArtDump", false)) {
@@ -208,6 +219,13 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         monitoring.setText(R.string.performance_monitoring);
         monitoring.setChecked(monitoringPreference());
         controls.addView(monitoring);
+        Button driverButton = new Button(this);
+        driverButton.setText(R.string.dmAndroidDriverSettings);
+        driverButton.setOnClickListener(v -> {
+            if (touchSettingsDialog != null) touchSettingsDialog.dismiss();
+            showDriverSettings();
+        });
+        controls.addView(driverButton);
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle(R.string.dmAndroidTouchSettings).setView(controls)
             .setPositiveButton(R.string.dmConfirm, (d, which) -> saveTouchSettings(left.getProgress(), right.getProgress(), monitoring.isChecked()))
@@ -220,6 +238,56 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             if (resumed) immersive();
         });
         dialog.show();
+    }
+
+    private void showDriverSettings() {
+        if (!resumed || isFinishing() || isDestroyed() || driverSettingsDialog != null) return;
+        File files = getFilesDir();
+        List<DriverPackageStore.DriverInfo> installed = DriverPackageStore.list(files);
+        DriverPackageStore.DriverInfo chosen = DriverPackageStore.selected(files);
+        List<String> labels = new ArrayList<>();
+        labels.add((chosen == null ? "✓ " : "") + getString(R.string.dmAndroidSystemDriver));
+        for (DriverPackageStore.DriverInfo info : installed)
+            labels.add((chosen != null && chosen.digest.equals(info.digest) ? "✓ " : "") +
+                       info.libraryName + "  " + info.digest.substring(0, 8));
+        labels.add(getString(R.string.dmAndroidImportDriver));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle(R.string.dmAndroidDriverSettings)
+            .setItems(labels.toArray(new String[0]), (d, which) -> {
+                if (which == labels.size() - 1) {
+                    Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("application/zip");
+                    startActivityForResult(picker, DRIVER_ZIP_PICKER);
+                    return;
+                }
+                try {
+                    if (which == 0) DriverPackageStore.clearSelection(files);
+                    else DriverPackageStore.select(files, installed.get(which - 1));
+                    Toast.makeText(this, R.string.dmAndroidDriverRestart, Toast.LENGTH_LONG).show();
+                } catch (IOException e) {
+                    Toast.makeText(this, getString(R.string.dmAndroidDriverImportFailed, e.getMessage()), Toast.LENGTH_LONG).show();
+                }
+            }).setNegativeButton(R.string.dmCancel, (d, which) -> {}).create();
+        driverSettingsDialog = dialog;
+        dialog.setOnDismissListener(d -> { if (driverSettingsDialog == dialog) driverSettingsDialog = null; });
+        dialog.show();
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != DRIVER_ZIP_PICKER || result != RESULT_OK || data == null || data.getData() == null) return;
+        android.net.Uri uri = data.getData();
+        new Thread(() -> {
+            try (InputStream input = getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IOException("Cannot open selected ZIP");
+                DriverPackageStore.DriverInfo info = DriverPackageStore.importPackage(getFilesDir(), input);
+                DriverPackageStore.select(getFilesDir(), info);
+                runOnUiThread(() -> Toast.makeText(this, R.string.dmAndroidDriverRestart, Toast.LENGTH_LONG).show());
+            } catch (IOException e) {
+                runOnUiThread(() -> Toast.makeText(this,
+                    getString(R.string.dmAndroidDriverImportFailed, e.getMessage()), Toast.LENGTH_LONG).show());
+            }
+        }, "dm-driver-import").start();
     }
 
     private static String readText(File f) {
@@ -400,7 +468,19 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         File data = new File(downloads, "S2X/D2R Mobile/data"), earlier = new File(downloads, "data");
         if (!data.isDirectory() && earlier.isDirectory()) data = earlier;
         String src = data.getAbsolutePath();
-        int result = nativeStart(getFilesDir().getAbsolutePath(), ext.getAbsolutePath(), src, Locale.getDefault().toLanguageTag());
+        DriverPackageStore.DriverInfo chosenDriver = DriverPackageStore.selected(getFilesDir());
+        if (chosenDriver != null) try { DriverPackageStore.beginAttempt(getFilesDir(), chosenDriver); }
+        catch (IOException e) {
+            try { DriverPackageStore.clearSelection(getFilesDir()); } catch (IOException ignored) { }
+            chosenDriver = null;
+            Toast.makeText(this, R.string.dmAndroidDriverRestored, Toast.LENGTH_LONG).show();
+        }
+        int result = nativeStart(getFilesDir().getAbsolutePath(), ext.getAbsolutePath(), src,
+            Locale.getDefault().toLanguageTag(), getApplicationInfo().nativeLibraryDir,
+            chosenDriver == null ? null : chosenDriver.digest,
+            chosenDriver == null ? null : chosenDriver.libraryName);
+        if (result < 0 && chosenDriver != null) try { DriverPackageStore.cancelAttempt(getFilesDir()); }
+        catch (IOException e) { android.util.Log.e("dm-driver", "Could not cancel driver attempt", e); }
         if (result < 0) {
             int resource = switch (result) {
                 case -2 -> R.string.dmAndroidMissingData;
@@ -540,10 +620,10 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     @Override public void onDisplayRemoved(int id) { updateRefresh(); }
     @Override public void onDisplayChanged(int id) { updateRefresh(); }
     @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(started && bootFailure == 0 && monitoringPreference()); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } }
-    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
+    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); releaseTouches(); if (performanceOverlay != null) performanceOverlay.setMonitoringEnabled(false); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
     @Override protected void onStart() { super.onStart(); if (started) nativeFocus(2); }
     @Override protected void onStop() { if (started) nativeFocus(1); com.xiaoboluo.d2r.widget.HeroWidgetProvider.requestUpdate(this); super.onStop(); }
-    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); if (driverSettingsDialog != null) driverSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); else releaseTouches(); }
 
     @Override public void surfaceCreated(SurfaceHolder h) {}

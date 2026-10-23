@@ -23,6 +23,7 @@ foreach(map "${CMAKE_BINARY_DIR}=build" "${DM_GEN_DIR}=gen" "${CMAKE_ANDROID_NDK
   add_compile_options("-ffile-prefix-map=${map}")
 endforeach()
 add_subdirectory(../gfx/vulkan ${CMAKE_CURRENT_BINARY_DIR}/vulkan)
+add_subdirectory(../third_party/adrenotools ${CMAKE_CURRENT_BINARY_DIR}/adrenotools)
 
 set(DM ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(HOST ${DM}/host)
@@ -73,6 +74,9 @@ foreach(s ${HOST}/entry.S ${DM}/gfx/nvn/nvn_entry.S ${DM}/gfx/nvn/nvn_thunks.S)
 endforeach()
 
 set(ANDROID_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/driver_dispatch.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/driver_loader.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/driver_loader_android.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/front_android.c
   ${CMAKE_CURRENT_SOURCE_DIR}/perf_android.c
   ${CMAKE_CURRENT_SOURCE_DIR}/touch_android.c
@@ -102,7 +106,7 @@ target_include_directories(dmcore PUBLIC ${DM}/ios/Sources)
 # Same optimization level as the Makefile (-O1 -g); dm_android_compat.h force-included; -fno-strict-aliasing matches the host's habit of reading and writing guest memory under Apple clang's default behaviour
 set(DM_CFLAGS -O1 -g -Wall -Wno-unused-function -fno-strict-aliasing -include ${CMAKE_CURRENT_SOURCE_DIR}/compat/include/dm_android_compat.h)
 target_compile_options(dmcore PUBLIC $<$<COMPILE_LANGUAGE:C>:${DM_CFLAGS} -std=gnu17>)
-target_link_libraries(dmcore PUBLIC dm_vulkan_engine aaudio android log m dl)
+target_link_libraries(dmcore PUBLIC dm_vulkan_engine adrenotools aaudio android log m dl)
 
 # 命令行宿主：main.c 原样 | Command-line host: main.c as is
 add_executable(dmhost ${HOST}/main.c)
@@ -118,6 +122,7 @@ add_library(dm_app_main OBJECT ${HOST}/main.c)
 target_link_libraries(dm_app_main PRIVATE dmcore)
 target_compile_definitions(dm_app_main PRIVATE main=dm_main)
 add_library(dm SHARED $<TARGET_OBJECTS:dm_app_main> ${CMAKE_CURRENT_SOURCE_DIR}/jni_android.c ${CMAKE_CURRENT_SOURCE_DIR}/text_input_jni.c ${CMAKE_CURRENT_SOURCE_DIR}/touch_android_jni.c ${CMAKE_CURRENT_SOURCE_DIR}/perf_android_jni.c ${CMAKE_CURRENT_SOURCE_DIR}/overlay_validate.c ${DM_OVERLAY_HEADER})
+add_dependencies(dm hook_impl main_hook)
 target_include_directories(dm PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_definitions(dm PRIVATE $<$<CONFIG:Debug>:DM_ANDROID_DEBUG_ENV=1>)
 target_link_libraries(dm PRIVATE -Wl,--whole-archive dmcore -Wl,--no-whole-archive android)

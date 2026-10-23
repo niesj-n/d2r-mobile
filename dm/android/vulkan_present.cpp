@@ -1,7 +1,12 @@
 // 安卓Vulkan呈现与窗口生命周期；依据原WSI桥及PR9/10的可回退呈现/钉核实验。
 // Android Vulkan presentation and window lifetimes, based on the original WSI bridge and reversible PR9/10 overlap/affinity experiments.
+#ifndef VK_USE_PLATFORM_ANDROID_KHR
 #define VK_USE_PLATFORM_ANDROID_KHR
+#endif
 #include "vulkan_present.h"
+#include "driver_dispatch.h"
+#include "driver_loader.h"
+#include "driver_cache.h"
 #include "../gfx/vulkan/nvn_vk.h"
 #include "../gfx/xtrace.h"
 #include <android/log.h>
@@ -20,11 +25,22 @@
 #include <cerrno>
 #include <sched.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <time.h>
 extern "C" double dm_present_period(void);
 // 错过上屏节拍的帧数（晚于「上次期望时刻 + 周期」2 ms 以上）；自适应出图档按它降档 / 试升
 // Frames that missed their display slot (more than 2 ms later than "previous desired time + period"); the adaptive present tier steps down / probes up by it
 static std::atomic<uint64_t> dm_present_late{0};
+static std::string driver_root, driver_hooks, driver_digest, driver_name;
+static dm_driver_loaded active_driver{};
+static std::atomic<bool> custom_failed{false};
+static std::atomic<bool> custom_confirmed{false};
+extern "C" void dm_android_vk_configure_driver(const char *root, const char *hooks,
+                                                  const char *digest, const char *name) {
+    driver_root=root?root:"";driver_hooks=hooks?hooks:"";
+    driver_digest=digest?digest:"";driver_name=name?name:"";
+}
+extern "C" int dm_android_vk_custom_failed(void){return custom_failed.load();}
 extern "C" uint64_t dm_present_late_count(void){return dm_present_late.load(std::memory_order_relaxed);}
 namespace {
 std::mutex window_mutex;std::condition_variable window_cv;
@@ -43,7 +59,7 @@ bool surface_properties_changed(){
     return c.currentTransform!=created_transform || c.currentExtent.width!=created_surface_extent.width || c.currentExtent.height!=created_surface_extent.height;
 }
 std::vector<VkImage> images;VkCommandPool command_pool;VkCommandBuffer command;
-VkSemaphore acquired;std::vector<VkSemaphore> finished;VkFence fence;bool ready=false,swap_dirty=false;std::string shader_path;
+VkSemaphore acquired;std::vector<VkSemaphore> finished;VkFence fence;bool ready=false,swap_dirty=false;std::string shader_path,cache_path;
 // 缺省开启（标记文件 gfx-present-overlap 为 '0' 时关）：最多两次呈现 blit 在途，不在每帧后清空队列，游戏可在 GPU 收尾本帧时翻译下一帧。
 // On by default (marker file gfx-present-overlap = '0' turns it off): keep up to two present blits in flight instead of draining the queue
 // after every frame, so the game translates the next frame while the GPU finishes this one. Each in-flight frame has
@@ -283,6 +299,13 @@ int present(void*,void*,VkImage source,VkFormat source_format,uint32_t width,uin
     if(pr==VK_ERROR_SURFACE_LOST_KHR){uint64_t bad=active_generation;destroy_swap();wait_window_change(bad);continue;}
     if(pr==VK_ERROR_OUT_OF_DATE_KHR){swap_dirty=true;wait_resize();continue;}
     if(pr!=VK_SUCCESS&&pr!=VK_SUBOPTIMAL_KHR)return pr;
+    if(active_driver.custom && !custom_failed.load() && !custom_confirmed.load()) {
+        std::string marker=driver_root+"/drivers/attempt.pending";
+        if(unlink(marker.c_str())==0 || errno==ENOENT) {
+            custom_confirmed=true;
+            __android_log_print(ANDROID_LOG_INFO,"dm-vulkan","Custom driver first present succeeded; startup guard cleared");
+        }
+    }
     // 已成功呈现的帧不因尺寸瞬变报错；下帧再重建或等待可用尺寸。
     // Defer suboptimal recreation to the next frame, which can wait for a usable extent.
     if((rebuild||pr==VK_SUBOPTIMAL_KHR)&&surface_properties_changed())swap_dirty=true;
@@ -296,15 +319,24 @@ extern "C" int dm_android_vk_initialize(const char *path,char *error,size_t byte
     if(path){std::string dir=path;size_t cut=dir.find_last_of('/');if(FILE *m=fopen(((cut==std::string::npos?dir:dir.substr(0,cut))+"/gfx-present-native").c_str(),"rb")){present_native=fgetc(m)!='0';fclose(m);}
         if(FILE *m=fopen(((cut==std::string::npos?dir:dir.substr(0,cut))+"/gfx-present-timing").c_str(),"rb")){present_timing=true;fclose(m);}}
     std::lock_guard<std::mutex> render_lock(render_mutex);
-    auto fail=[&](const char *what,VkResult r)->int{if(error&&bytes)snprintf(error,bytes,"%s: VkResult %d",what,int(r));if(!ready)cleanup_initialization();return int(r?r:VK_ERROR_INITIALIZATION_FAILED);};
+    custom_failed=false;custom_confirmed=false;
+    auto fail=[&](const char *what,VkResult r)->int{if(active_driver.custom)custom_failed=true;if(error&&bytes)snprintf(error,bytes,"%s: VkResult %d",what,int(r));if(!ready)cleanup_initialization();return int(r?r:VK_ERROR_INITIALIZATION_FAILED);};
     if(ready||!path||!*path)return fail("Initialization requires an external shader directory and an uninitialized renderer",VK_ERROR_INITIALIZATION_FAILED);
     // 每次初始化从缺省的 120 Hz 重新读标记。 | Each initialization starts again from the 120 Hz default before the marker.
     frame_rate_vote=120;
     {std::string dir=path;size_t cut=dir.find_last_of('/');if(FILE *m=fopen(((cut==std::string::npos?dir:dir.substr(0,cut))+"/gfx-frame-rate").c_str(),"rb")){float v=0;frame_rate_vote=fscanf(m,"%f",&v)==1 && v>=0 && v<=240?v:0;fclose(m);}}
 
     VkApplicationInfo ai{VK_STRUCTURE_TYPE_APPLICATION_INFO};ai.pApplicationName="dm-android";ai.apiVersion=VK_API_VERSION_1_1;
-    const char *ext[]={VK_KHR_SURFACE_EXTENSION_NAME,VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};VkInstanceCreateInfo ic{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};ic.pApplicationInfo=&ai;ic.enabledExtensionCount=2;ic.ppEnabledExtensionNames=ext;VkResult r=vkCreateInstance(&ic,nullptr,&instance);if(r)return fail("vkCreateInstance",r);
+    dm_driver_choice choice{driver_root.c_str(),driver_hooks.c_str(),
+                            driver_digest.empty()?nullptr:driver_digest.c_str(),
+                            driver_name.empty()?nullptr:driver_name.c_str()};
+    const dm_driver_ops *ops=dm_android_driver_ops();
+    if(!dm_driver_open(ops,&choice,&active_driver))return fail("Vulkan loader",VK_ERROR_INITIALIZATION_FAILED);
+    const char *ext[]={VK_KHR_SURFACE_EXTENSION_NAME,VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};VkInstanceCreateInfo ic{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};ic.pApplicationInfo=&ai;ic.enabledExtensionCount=2;ic.ppEnabledExtensionNames=ext;VkResult r=vkCreateInstance(&ic,nullptr,&instance);
+    if(r&&active_driver.custom){custom_failed=true;if(dm_driver_fallback_system(ops,&active_driver))r=vkCreateInstance(&ic,nullptr,&instance);}
+    if(r){dm_vk_dispatch_reset_early();return fail("vkCreateInstance",r);}dm_vk_dispatch_load_instance(instance);
     uint32_t n=0;vkEnumeratePhysicalDevices(instance,&n,nullptr);std::vector<VkPhysicalDevice> devices(n);vkEnumeratePhysicalDevices(instance,&n,devices.data());if(!n)return fail("No Vulkan device",VK_ERROR_INITIALIZATION_FAILED);
+    if(active_driver.custom&&!dm_driver_verify(ops,&active_driver))return fail("Selected driver did not load",VK_ERROR_INITIALIZATION_FAILED);
     physical=devices[0];
     // 启动期间也可能旋转/切后台；等待新窗口，不把瞬时撤回误报为启动失败。
     // Rotation/backgrounding can race startup too; wait for a live window instead of failing boot.
@@ -321,7 +353,7 @@ extern "C" int dm_android_vk_initialize(const char *path,char *error,size_t byte
     // Diagnostic (marker gfx-pipe-stats): the driver's per-pipeline statistics (VK_KHR_pipeline_executable_properties).
     VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR pef{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
     if(FILE *ps=[&]{std::string dir=path;size_t cut=dir.find_last_of('/');return fopen(((cut==std::string::npos?dir:dir.substr(0,cut))+"/gfx-pipe-stats").c_str(),"rb");}()){fclose(ps);dext.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);pef.pipelineExecutableInfo=VK_TRUE;pef.pNext=draw.pNext;draw.pNext=&pef;}
-    float priority=1;VkDeviceQueueCreateInfo qc{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};qc.queueFamilyIndex=family;qc.queueCount=1;qc.pQueuePriorities=&priority;VkDeviceCreateInfo dc{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};dc.pNext=&draw;dc.pEnabledFeatures=&features.features;dc.queueCreateInfoCount=1;dc.pQueueCreateInfos=&qc;dc.enabledExtensionCount=uint32_t(dext.size());dc.ppEnabledExtensionNames=dext.data();if((r=vkCreateDevice(physical,&dc,nullptr,&device)))return fail("vkCreateDevice",r);vkGetDeviceQueue(device,family,0,&queue);
+    float priority=1;VkDeviceQueueCreateInfo qc{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};qc.queueFamilyIndex=family;qc.queueCount=1;qc.pQueuePriorities=&priority;VkDeviceCreateInfo dc{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};dc.pNext=&draw;dc.pEnabledFeatures=&features.features;dc.queueCreateInfoCount=1;dc.pQueueCreateInfos=&qc;dc.enabledExtensionCount=uint32_t(dext.size());dc.ppEnabledExtensionNames=dext.data();if((r=vkCreateDevice(physical,&dc,nullptr,&device)))return fail("vkCreateDevice",r);dm_vk_dispatch_load_device(device);vkGetDeviceQueue(device,family,0,&queue);
     for(;;){
         wait_window();
         if(!surface||window_changed()){
@@ -348,6 +380,16 @@ extern "C" int dm_android_vk_initialize(const char *path,char *error,size_t byte
     if(overlap){if((r=vkCreateCommandPool(device,&cp,nullptr,&overlap_pool)))return fail("Present command pool",r);ca.commandPool=overlap_pool;if((r=vkAllocateCommandBuffers(device,&ca,&overlap_command)))return fail("Present command",r);
         if((r=vkCreateSemaphore(device,&sc,nullptr,&overlap_acquired)))return fail("Acquire semaphore",r);if((r=vkCreateFence(device,&fc,nullptr,&overlap_fence)))return fail("Present fence",r);}
     __android_log_print(ANDROID_LOG_INFO,"dm-vulkan","Present overlap=%d (marker gfx-present-overlap)",int(overlap));
-    shader_path=path;dm_vk_config config{};config.size=sizeof(config);config.game.size=sizeof(config.game);config.game.physical=physical;config.game.device=device;config.game.queue=queue;config.game.queue_family=family;config.game.enabled_core=features.features;config.game.enabled_shader_draw_parameters=draw.shaderDrawParameters;config.game.fence_timeout_ns=10000000000ull;config.game.shader_directory=shader_path.c_str();config.game.present=present;config.game.log=log_message;config.game.fatal=fatal;config.sampler_mirror_clamp_to_edge=mirror;config.has_window=has_window;config.display_hz=0; // Query actual display refresh in frontend; do not guess 60 Hz.
+    shader_path=path;cache_path.clear();
+    if(active_driver.custom){
+        VkPhysicalDeviceProperties props{};vkGetPhysicalDeviceProperties(physical,&props);
+        std::string key=dm_driver_cache_key(driver_digest.c_str(),props.vendorID,props.deviceID,props.driverVersion,props.pipelineCacheUUID);
+        if(key.empty())return fail("Custom driver cache identity",VK_ERROR_INITIALIZATION_FAILED);
+        size_t cut=shader_path.find_last_of('/');std::string base=(cut==std::string::npos?shader_path:shader_path.substr(0,cut))+"/driver-cache";
+        cache_path=base+"/"+key;
+        if((mkdir(base.c_str(),0700)&&errno!=EEXIST)||(mkdir(cache_path.c_str(),0700)&&errno!=EEXIST))
+            return fail("Custom driver cache directory",VK_ERROR_INITIALIZATION_FAILED);
+    }
+    dm_vk_config config{};config.size=sizeof(config);config.game.size=sizeof(config.game);config.game.physical=physical;config.game.device=device;config.game.queue=queue;config.game.queue_family=family;config.game.enabled_core=features.features;config.game.enabled_shader_draw_parameters=draw.shaderDrawParameters;config.game.fence_timeout_ns=10000000000ull;config.game.shader_directory=shader_path.c_str();config.game.cache_directory=cache_path.empty()?nullptr:cache_path.c_str();config.game.present=present;config.game.log=log_message;config.game.fatal=fatal;config.sampler_mirror_clamp_to_edge=mirror;config.has_window=has_window;config.display_hz=0; // Query actual display refresh in frontend; do not guess 60 Hz.
     int status=dm_vk_initialize(&config,error,bytes);if(!status)ready=true;else cleanup_initialization();return status;
 }

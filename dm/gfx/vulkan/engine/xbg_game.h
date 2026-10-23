@@ -19,6 +19,7 @@ typedef struct xbg_game_config {
     VkBool32 enabled_shader_draw_parameters;
     uint64_t fence_timeout_ns;
     const char *shader_directory; /* <control-sha256-first16>.xgs bundles */
+    const char *cache_directory;  /* null: legacy system-driver cache next to shaders */
     void *userdata;
     /* Optional guest trampoline. NULL means callbacks are directly callable. */
     uint64_t (*invoke_guest)(void *userdata,void *function,const uint64_t *args,uint32_t count);

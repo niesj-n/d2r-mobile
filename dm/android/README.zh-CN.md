@@ -26,6 +26,18 @@ python3 dm/tools/d2rm_android.py <Switch 版 3.3.94012 的 Update 目录> <输�
 
 把这个 `android` 文件夹整个拷到手机的 `Download/S2X/D2R Mobile/` 下，游戏资源（`RomFS/data` 整个目录）拷成同一处的 `data`。打开 App：发现新的导入包就拷进内部目录 `files/dm/`（显示进度，第一次一两分钟），然后启动。导入包要与 App 同一版本（`pack_info.txt` 里的产物代号与 App 编入的相同），不同时 App 会说明。导入完，手机上的 `android` 文件夹可以删掉；导入包里有游戏内容，只给自己用。
 
+### 可选 Vulkan 驱动
+
+默认使用手机的系统驱动。若要试用自行取得的 ARM64 AdrenoTools 驱动 ZIP，
+在游戏里打开设置按钮，选择 **Vulkan 驱动 → 导入驱动 ZIP…**，再通过安卓文件选择器选包。
+应用只在私有目录中复制和校验，不代下载驱动。选好导入的驱动后，关闭并重新打开应用；
+要恢复手机驱动，在同一菜单选 **系统驱动（默认）**。
+
+导入器接受 `vulkan.*.so` 及 Mesa 的 `libvulkan_*.so` 主库名，也读取
+`meta.json` 的 `libraryName`。自定义驱动首次启动会保持恢复标记，直到成功呈现一帧；
+若在此前崩溃，下次启动会撤销该选择并使用系统驱动。芯片兼容、画面正确性和性能
+须在实际手机与所选驱动上验证。16 KB 页面设备还要求用户提供的驱动本身兼容 16 KB。
+
 ## 本地构建
 
 当前配置使用 JDK 17 或更新版本、Gradle 9.8.1、Android SDK 36、NDK 29.0.14206865、CMake 3.31.6 和 Python 3。ARM64 设备要求 Android 12/API 31 或更新系统及具备所需设备能力的 Vulkan 1.1。这些是构建和清单要求，不代表符合条件的机型都已验证。首台目标是 vivo X200 Ultra（Android 16/API 36、Adreno 830）。
@@ -38,7 +50,7 @@ gradle -p dm/android :app:assembleDebug :app:lintDebug \
   -PdmPython=/absolute/path/to/python
 ```
 
-APK 位于 `dm/android/app/build/outputs/apk/debug/app-debug.apk`，原生链接启用 `--no-undefined`。`-PdmPrebuiltJni=...` 只供使用已有库打包，不是当前原生源码编译通过的证据。
+APK 位于 `dm/android/app/build/outputs/apk/debug/app-debug.apk`，原生链接启用 `--no-undefined`。`-PdmPrebuiltJni=...` 只供使用已有库打包，不是当前原生源码编译通过的证据；该目录的 `arm64-v8a/` 必须同时有 `libdm.so`、`libhook_impl.so` 和 `libmain_hook.so`。
 
 在 Linux 或 WSL 上，可用 `dm/android/docker/` 在容器里跑同一构建，上述版本均已钉死，不需要在 Windows 侧装 Python、NDK 或 CMake：
 

@@ -145,11 +145,18 @@ static void load_env_file(const char *dir) {
     fclose(fp);
 }
 
-JNIEXPORT jint JNICALL Java_com_xiaoboluo_d2r_DmActivity_nativeStart(JNIEnv *env, jclass cls, jstring files, jstring ext, jstring src, jstring lang) {
+JNIEXPORT jint JNICALL Java_com_xiaoboluo_d2r_DmActivity_nativeStart(JNIEnv *env, jclass cls, jstring files, jstring ext, jstring src, jstring lang, jstring native_lib_dir, jstring driver_digest, jstring driver_name) {
     (void)cls;
     static int started; if (started) return 0;
     const char *f = (*env)->GetStringUTFChars(env, files, NULL), *x = (*env)->GetStringUTFChars(env, ext, NULL), *s = (*env)->GetStringUTFChars(env, src, NULL), *lg = (*env)->GetStringUTFChars(env, lang, NULL);
+    const char *hooks = native_lib_dir ? (*env)->GetStringUTFChars(env, native_lib_dir, NULL) : NULL;
+    const char *digest = driver_digest ? (*env)->GetStringUTFChars(env, driver_digest, NULL) : NULL;
+    const char *name = driver_name ? (*env)->GetStringUTFChars(env, driver_name, NULL) : NULL;
     snprintf(g_files, sizeof g_files, "%s", f); snprintf(g_ext, sizeof g_ext, "%s", x); snprintf(g_src, sizeof g_src, "%s", s);
+    dm_android_vk_configure_driver(g_files, hooks, digest, name);
+    if (hooks) (*env)->ReleaseStringUTFChars(env, native_lib_dir, hooks);
+    if (digest) (*env)->ReleaseStringUTFChars(env, driver_digest, digest);
+    if (name) (*env)->ReleaseStringUTFChars(env, driver_name, name);
     // 启动时间线零点：Process.getStartUptimeMillis() 是 SystemClock.uptimeMillis（CLOCK_MONOTONIC），与 now_ns 同一时钟（见 main.c proc_start_mono_ns）
     // Boot timeline zero: Process.getStartUptimeMillis() is SystemClock.uptimeMillis (CLOCK_MONOTONIC), the same clock as now_ns (see main.c proc_start_mono_ns)
     jclass proc = (*env)->FindClass(env, "android/os/Process");

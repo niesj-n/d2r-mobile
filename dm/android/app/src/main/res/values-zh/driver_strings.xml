@@ -1,0 +1,8 @@
+<resources>
+    <string name="dmAndroidDriverSettings">Vulkan 驱动</string>
+    <string name="dmAndroidSystemDriver">系统驱动（默认）</string>
+    <string name="dmAndroidImportDriver">导入驱动 ZIP…</string>
+    <string name="dmAndroidDriverRestart">已保存驱动选择。关闭并重新打开应用后生效。</string>
+    <string name="dmAndroidDriverRestored">第三方驱动未能完成启动，已恢复系统驱动。</string>
+    <string name="dmAndroidDriverImportFailed">导入驱动失败：%1$s</string>
+</resources>

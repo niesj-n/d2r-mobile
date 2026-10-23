@@ -47,6 +47,23 @@ code in `pack_info.txt` must equal the one built into the App); otherwise the Ap
 says so. After the import you can delete the `android` folder on the phone. The
 import pack contains game content; keep it to yourself.
 
+### Optional Vulkan driver
+
+The system driver is the default. To try a separately obtained ARM64 AdrenoTools
+driver ZIP, open the in-game Settings button, choose **Vulkan driver**, then
+**Import driver ZIP…** and select the ZIP through Android's document picker.
+The app copies and checks the library in private storage; it does not download a
+driver. Choose an imported entry, close the app and reopen it. Select **System
+driver (default)** in the same menu to return to the phone's driver.
+
+The importer accepts `vulkan.*.so` and Mesa's `libvulkan_*.so` names, including
+ZIPs whose `meta.json` specifies `libraryName`. A selected driver's first
+startup is guarded until a frame is presented. If it crashes before that point,
+the next launch clears the selection and uses the system driver. Driver support,
+visual correctness and performance depend on the device and selected package;
+they require testing on the actual phone. A driver supplied by the player may
+also need its own 16 KB page-size support on 16 KB devices.
+
 ## Build locally
 
 The current configuration uses JDK 17 or newer, Gradle 9.8.1, Android SDK 36,
@@ -71,6 +88,8 @@ gradle -p dm/android :app:assembleDebug :app:lintDebug \
 The APK is `dm/android/app/build/outputs/apk/debug/app-debug.apk`. Native linking
 uses `--no-undefined`. `-PdmPrebuiltJni=...` is a packaging-only fallback; it is not
 evidence that current native sources compile.
+With `dmPrebuiltJni`, provide `libdm.so`, `libhook_impl.so` and
+`libmain_hook.so` together under `arm64-v8a/`.
 
 On Linux or WSL, `dm/android/docker/` runs the same build in a container with these
 versions pinned, so no Windows-side Python, NDK or CMake is needed:

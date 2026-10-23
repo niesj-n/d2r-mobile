@@ -8,6 +8,10 @@ extern "C" {
  * UI thread: retains window; NULL suspends presentation. Only updates the window
  * snapshot; never calls Vulkan or waits for the GPU. */
 void dm_android_vk_set_window(ANativeWindow *window);
+/* Configure once on the UI startup thread, before nativeStart creates the host thread. */
+void dm_android_vk_configure_driver(const char *private_root, const char *hook_lib_dir,
+                                    const char *digest, const char *driver_name);
+int dm_android_vk_custom_failed(void);
 /* 宿主线程：在dm_main前初始化一次；Surface暂时撤回时等待恢复。
  * Host thread: before dm_main, after set_window. Waits across surface withdrawal
  * and initializes genuine Vulkan replay once.
