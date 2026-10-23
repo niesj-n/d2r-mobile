@@ -29,7 +29,12 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
    Append six icon records (status, atlas, crop, secondary/charge flags, charges) and 18 HUD values. */
 enum { DM_ANDROID_TOUCH_GLYPHS = 4 + 23 * 5, DM_ANDROID_TOUCH_HUD = DM_ANDROID_TOUCH_GLYPHS + 6 * 8,
        DM_ANDROID_TOUCH_QUICK = DM_ANDROID_TOUCH_HUD + 18, DM_ANDROID_TOUCH_QUICK_COUNT = 3,
-       DM_ANDROID_TOUCH_DRAW_FLOATS = DM_ANDROID_TOUCH_QUICK + DM_ANDROID_TOUCH_QUICK_COUNT * 5 };
+       DM_ANDROID_TOUCH_AIM = DM_ANDROID_TOUCH_QUICK + DM_ANDROID_TOUCH_QUICK_COUNT * 5,
+       DM_ANDROID_TOUCH_CANCEL = DM_ANDROID_TOUCH_AIM + 5 * 6,
+       DM_ANDROID_TOUCH_DRAW_FLOATS = DM_ANDROID_TOUCH_CANCEL + 5 };
+/* Android aim extension: five [active, thumb_dx_dp, thumb_dy_dp, screen_ux,
+ * screen_uy, cancel_hover] records; then [cancel_cx,cy,r,visible,hover].
+ * Screen directions use +Y down. The existing first 200 floats are stable. */
 /* Appended quick hit circles [x,y,r,visible,pressed]: bare map icon, map position, loot filter. */
 void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]);
 #ifdef __cplusplus

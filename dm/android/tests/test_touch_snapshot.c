@@ -38,7 +38,7 @@ enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
 
 _Static_assert(DM_ANDROID_TOUCH_GLYPHS==119 && DM_ANDROID_TOUCH_HUD==167 && DM_ANDROID_TOUCH_QUICK==185 && DM_ANDROID_TOUCH_QUICK_COUNT==3, "The legacy prefix offsets must stay stable");
 _Static_assert(DM_ANDROID_ACTION_LOOT_FILTER==4, "Filter keeps the existing quick action number");
-_Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 200, "Review the Java/native ABI before changing this test");
+_Static_assert(DM_ANDROID_TOUCH_AIM==200 && DM_ANDROID_TOUCH_CANCEL==230 && DM_ANDROID_TOUCH_DRAW_FLOATS==235, "Preserve the 200-float prefix and Android aim extension");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
 static const char *case_name = "startup";
 static unsigned checks, cases;
@@ -146,7 +146,8 @@ int dm_ui_drop_at_now(float x, float lifted, float finger) { (void)x; (void)lift
 int dm_ui_drop_bag(void) { unexpected_host_call(__func__); return 0; }
 int dm_ui_drop_point(float *x, float *y) { (void)x; (void)y; unexpected_host_call(__func__); return 0; }
 int dm_ui_origin_point(float *x, float *y) { (void)x; (void)y; unexpected_host_call(__func__); return 0; }
-int dm_ui_bind_skill_hit(float *x, float *y) { (void)x; (void)y; unexpected_host_call(__func__); return 0; }
+static int allow_empty_binding_hit;
+int dm_ui_bind_skill_hit(float *x, float *y) { (void)x; (void)y; if(!allow_empty_binding_hit) unexpected_host_call(__func__); return 0; }
 void dm_ui_bind_begin(uint64_t key) { (void)key; unexpected_host_call(__func__); }
 void dm_ui_world_tap(float ux, float uy, float wx, float wy) { (void)ux; (void)uy; (void)wx; (void)wy; unexpected_host_call(__func__); }
 void dm_ui_stack_take_at(float x, float y) { (void)x; (void)y; unexpected_host_call(__func__); }
@@ -172,6 +173,7 @@ void dm_uiscreen_set_panel(int panel) {
 }
 int dm_uiscreen_ingame(void) { return observed_ingame; }
 static void fixture(int navigation) {
+    allow_empty_binding_hit=0;
     dm_android_touch_obstructions(0,0,0,0,0);
     memset(&tc, 0, sizeof tc);
     memset(&scene, 0, sizeof scene);

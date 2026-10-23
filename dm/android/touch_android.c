@@ -74,6 +74,7 @@ static float fe_x0, fe_y0;
    the panel replace them all); DM_TOUCH_NAV_PAD=1 brings them back for debugging */
 static int nav_pad(void) { static int v = -1; if (v < 0) { const char *e = getenv("DM_TOUCH_NAV_PAD"); v = e && e[0] == '1'; } return v; }
 static int touch_overlay(void) { static int v = -1; if (v < 0) { const char *o = getenv("DM_ROMFS_OVERLAY"); v = o && *o; } return v; }
+#include "touch_aim_feedback.h"
 static void fe_end_locked(void) {
     if (fe_slot >= 0) { if (fe_drag) dm_ui_drag_end(); else dm_ui_touch(3, 0, 0); }
     fe_slot = -1; fe_drag = 0;
@@ -94,6 +95,7 @@ static void fe_event_locked(const touch_event *e) {
 
 static void init_locked(void) {
     if (ready) return;
+    aim_feedback_reset();
     dm_tc_set_tall_scale(tablet_layout);
     dm_tc_init(&tc, width, height);
     tc.mouse_click_mode = 1;
@@ -103,6 +105,7 @@ static void init_locked(void) {
     labels_ready_at = 0; labels_done = 0;
 }
 static void cancel_locked(void) {
+    aim_feedback_reset();
     dm_tc_cancel_all(&tc);
     dm_product_ui_touch(3);
     memset(quick,0,sizeof quick); memset(quick_flash,0,sizeof quick_flash);
@@ -225,6 +228,7 @@ void dm_android_touch_uimsg(const char *cat, const char *act, const char *arg) {
     }
     int fe = !scene.game && touch_overlay();
     if (fe != frontend) { cancel_locked(); head = tail = 0; frontend = fe; }
+    if (tc.navigation_mode != !!nav) aim_feedback_reset();
     dm_tc_set_navigation_mode(&tc, nav);
     if (fe || (nav && dm_ui_sort_context() < 0)) { action_head = action_tail = 0; action_release = 0; }
     dm_tc_set_joy_block(&tc, !!(dm_ui_panel_state() & DM_PS_TEXT));
@@ -417,6 +421,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     }
     if (!focused) { pthread_mutex_unlock(&lock); return; }
     sync_host();
+    aim_feedback_sync();
     if (map_world_pending) {
         int result=dm_world_tap_result(map_world_seq);
         if (result>=0) { map_world_pending=0; if (!result && !tc.navigation_mode) dm_ui_map_full(1); }
@@ -435,6 +440,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         if (frontend) { fe_event_locked(&e); continue; }
         if (quick_event(&e)) continue;
         if (direct_event(&e) || (e.phase==0 && direct_begin(&e))) continue;
+        if (aim_feedback_event(&e)) { latched[e.slot]=0; continue; }
         dm_tc_finger *f = &tc.finger[e.slot];
         uint64_t before_buttons = tc.buttons;
         int before_target = f->target;
@@ -515,7 +521,8 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     }
     if (!tc.pulse_button && dm_tc_pulse_pending(&tc) && resume_sample && sample >= resume_sample) { dm_tc_pulse_resume(&tc); resume_sample = 0; }
     if (tc.pointer_valid) dm_cursor_set_screen(tc.pointer_x,tc.pointer_y,width,height); else dm_cursor_clear();
-    int active = 0; for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active || quick[i].index;
+    int active = aim_feedback_active();
+    for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active || quick[i].index;
     dm_ui_hand_idle(!active && action_head==action_tail && !action_release &&
                     !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
     int gameplay = scene.game && !frontend && !tc.navigation_mode, dispatched = 0;
@@ -608,5 +615,6 @@ void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]) {
                 if (quick[j].index==i+1 && !quick[j].cancelled) p[4]=1;
         }
     }
+    aim_feedback_layout(out);
     pthread_mutex_unlock(&lock);
 }
