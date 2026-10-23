@@ -7,6 +7,9 @@ public final class MapGoalLayoutTest {
   check(g!=null && g.inside && g.x==1680 && g.y==250,"minimap center");
   s[16]=10000;g=MapGoalLayout.project(s,0,2000,1000);check(!g.inside && g.x<=1926.4f && g.y<=376,"offscreen clamped");
   for(float l:new float[]{.02f,.36f,.7f}){s=snapshot();s[9]=l;s[11]=l+.28f;g=MapGoalLayout.project(s,0,2000,1000);check(Math.abs(g.x-(l+.14f)*2000)<.1f,"left center right");}
+  s=snapshot();s[10]=-.25f;s[12]=.05f;g=MapGoalLayout.project(s,0,2000,1000);
+  check(g!=null&&g.inside&&Math.abs(g.y+100)<.01f,"signed negative minimap origin preserved");
+  s[16]=10000;g=MapGoalLayout.project(s,0,2000,1000);check(g!=null&&!g.inside&&g.y>=-226&&g.y<=26.01f,"signed negative minimap edge projection");
   s=snapshot();s[0]=2;s[16]=110;s[17]=205;g=MapGoalLayout.project(s,0,2000,1000);check(g.inside && g.x==1032 && g.y==548,"original full map isometric projection");
   s[16]=10000;g=MapGoalLayout.project(s,0,2000,1000);check(!g.inside && g.y<=450,"fullmap skill region");
   s=snapshot();s[18]=70;g=MapGoalLayout.project(s,0,2000,1000);check(g.symbol && MapGoalLayout.labelName(g,1,false).equals("label_0.png"),"true tomb offscreen label");

@@ -49,7 +49,21 @@ final class MapGoalLayout {
     static boolean gameplay(float[] controls){return controls!=null&&controls.length>=235&&controls[0]>0&&controls[1]>0&&controls[2]==0;}
     static Box[] controlBounds(float[] c,float w,float h){ArrayList<Box> boxes=new ArrayList<>();if(c==null||c.length<235||c[0]<=0||c[1]<=0)return new Box[0];float kx=w/c[0],ky=h/c[1];
         for(int i=0;i<27;i++){int at=i<23?4+i*5:i<26?185+(i-23)*5:230;
-            if(c[at+3]==0||c[at+2]<=0)continue;float x=c[at]*kx,y=c[at+1]*ky,rx=c[at+2]*kx+2,ry=c[at+2]*ky+2;Box b=new Box(x-rx,y-ry,x+rx,y+ry);if(b.valid())boxes.add(b);}
+            if((c[at+3]==0&&i!=26)||c[at+2]<=0)continue;
+            float radius=c[at+2];
+            if(i<5){
+                // TouchOverlay.aimFeedback: arc r+19*k with an unscaled 6dp
+                // arrow; skill socket/badge can move up to 18*k. Reserve this
+                // envelope while idle too so cast state cannot move plaques.
+                float scale=Math.max(0,c[4+12*5+2]/60);
+                float arrow=radius+19*scale+6;
+                float badge=((float)Math.sqrt(2)*.74f+.30f)*radius+18*scale;
+                radius=Math.max(arrow,badge);
+            }
+            // CANCEL keeps its native location/radius while idle. Its future
+            // circle is reserved without changing any control visibility.
+            float x=c[at]*kx,y=c[at+1]*ky,rx=(radius+2)*kx,ry=(radius+2)*ky;
+            Box b=new Box(x-rx,y-ry,x+rx,y+ry);if(b.valid())boxes.add(b);}
         return boxes.toArray(new Box[0]);}
     /** Keep artwork inside safe view bounds and out of actual controls/info.
      * Candidate edges are finite and bounded; a completely covered area hides. */

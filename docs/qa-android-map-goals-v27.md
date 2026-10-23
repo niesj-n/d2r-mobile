@@ -38,7 +38,13 @@ Uses the original isometric factors 1.6 / 0.8, current real pixel cell scale,
 actual minimap rectangle, full-map player feet position, original map edge
 clamping, label/symbol heights and full-map lower-right skill exclusion.
 Visible control bounds (including quick actions/cancel), safe insets, monitor
-and Rift info are additional obstructions. Goal crosses/symbols keep their
+and Rift info are additional obstructions. The first five skill bounds reserve
+all idle/held AIM artwork: the direction arc/arrow and the socket's radial
+movement plus its offhand badge. The bound matches the Rift information layer's
+`max(r + 19*k + 6, (sqrt(2)*.74 + .30)*r + 18*k)` in control dp, plus 2dp
+safety; the arrow's 6dp tip is independent of `k`. The cancel circle's location
+is reserved whenever its radius is positive, including idle. This changes no
+control geometry or visibility and keeps plaques stable when casting. Goal crosses/symbols keep their
 projected location and hide when obstructed; plaques choose the nearest clear
 position within map bounds and hide if none fits. True tombs use original
 symbol frames only while inside; offscreen they use label 0 without a cross.
@@ -64,3 +70,13 @@ Device checks still required: real host target/entrance plaques, seven-tomb symb
 identity, mini left/center/right, full map, panel/frontend/focus hide, wide/tablet
 bounds, monitor/Rift obstruction, and missing-art runtime fallback. Offline
 success does not establish real game appearance or discovery completeness.
+
+The P2 direction-ring regression uses the real native queue and serializer:
+compile `dm/android/tests/dump_map_goal_controls.c` with the repository root on
+`-I`, execute it into a CSV, compile `MapGoalVisualBoundsTest.java` alongside
+`MapGoalLayout.java`, then run that test with the CSV path. It reproduces the
+800x375 held SKILL3/up12dp target delta (3,-33), original label aspect 275/60,
+and checks actual 360-direction arrow/badge primitives against reserved bounds.
+It also checks that all five skill envelopes stay stable across real
+idle/held/released snapshots and that idle cancel is reserved. The pure
+`MapGoalLayoutTest` additionally covers signed negative minimap coordinates.
