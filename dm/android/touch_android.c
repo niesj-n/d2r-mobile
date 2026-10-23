@@ -47,6 +47,7 @@ static uint64_t quick_flash[DM_ANDROID_TOUCH_QUICK_COUNT];
 static int ready, focused = 1, cancel, resizing, ui_drag;
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
 static float margin_left, margin_right;
+static float safe_top, monitor_left, monitor_top, monitor_right, monitor_bottom;
 static int tablet_layout, swap_above;
 typedef struct { int kind; float x,y; double time; uint64_t key; } direct_gesture;
 static direct_gesture direct[DM_TC_MAX_TOUCH];
@@ -135,6 +136,20 @@ void dm_android_touch_margins(float left_dp, float right_dp) {
 void dm_android_touch_tablet(int tablet) {
     pthread_mutex_lock(&lock);
     tablet_layout = !!tablet; resizing = cancel = 1; dm_inv_sort_touch_cancel();
+    pthread_mutex_unlock(&lock);
+}
+void dm_android_touch_obstructions(float top, float l, float t, float r, float b) {
+    top = isfinite(top) ? fmaxf(0,top) : 0;
+    if (!isfinite(l) || !isfinite(t) || !isfinite(r) || !isfinite(b) || r<=l || b<=t)
+        l=t=r=b=0;
+    pthread_mutex_lock(&lock);
+    if (safe_top!=top || monitor_left!=l || monitor_top!=t || monitor_right!=r || monitor_bottom!=b) {
+        safe_top=top; monitor_left=l; monitor_top=t; monitor_right=r; monitor_bottom=b;
+        /* Do not let a finger release on a control that moved underneath it. */
+        cancel=1; head=tail=0;
+        action_head=action_tail=0; action_release=0;
+        dm_inv_sort_touch_cancel();
+    }
     pthread_mutex_unlock(&lock);
 }
 /* Caller holds lock, including the native quick-touch route. */
@@ -266,15 +281,30 @@ static void release_pointer(dm_tc_finger *f) {
     } else if ((kind == 5 && dm_ui_drop_point(&x,&y)) || (kind == 0 && dm_ui_origin_point(&x,&y))) dm_tc_pointer_release_at(&tc,x*width,y*height);
     else { if (kind == 7) { dm_shop_sell_cursor(); kind = 0; } dm_tc_pointer_release(&tc,kind); }
 }
-/* Share this exact native geometry between serialization and capture. Anchoring
- * to MAIN also follows the existing safe-area and right-margin translation. */
+/* The snapshot and capture share this exact geometry. The two skill-side
+ * shortcuts follow MAIN's safe-area/margin translation along one outer arc. */
 static dm_tc_target quick_circle(int index) {
     float k=dm_tc_scale_for_size(tc.layout.width,tc.layout.height);
+    if (index==0) {
+        float r=22*k, gap=10*k;
+        float x=safe_left+margin_left+gap+r, y=safe_top+gap+r;
+        float right=tc.layout.width-safe_right-gap;
+        if (monitor_right>monitor_left && monitor_bottom>monitor_top &&
+            x+r>monitor_left && x-r<monitor_right && y+r>monitor_top && y-r<monitor_bottom) {
+            x=fmaxf(x,monitor_right+gap+r);
+            y=fmaxf(safe_top+gap,monitor_top)+r;
+            if (x+r>right) {
+                x=safe_left+margin_left+gap+r;
+                y=monitor_bottom+gap+r;
+                if (hypotf(x-tc.layout.joy_x,y-tc.layout.joy_y)<r+tc.layout.joy_radius+gap)
+                    x=fmaxf(x,tc.layout.joy_x+tc.layout.joy_radius+gap+r);
+            }
+        }
+        return (dm_tc_target){fminf(x,right-r),y,r,0};
+    }
     const dm_tc_target *main=&tc.layout.target[DM_TC_MAIN];
-    /* Tall tablet HUD belt rows are wider; keep the column closer to the
-     * original fan and above its set switch while retaining the same anchor. */
-    float dx=tc.layout.tablet ? 146 : 172, dy=tc.layout.tablet ? 248 : 212;
-    return (dm_tc_target){main->x-dx*k,main->y-(dy-46*index)*k,18*k,0};
+    float angle=(index==1 ? -125.0f : -103.0f)*(3.14159265358979323846f/180.0f);
+    return (dm_tc_target){main->x+214*k*cosf(angle),main->y+214*k*sinf(angle),18*k,0};
 }
 static int quick_visible(void) {
     return focused && ready && scene.game && !frontend && !tc.navigation_mode &&

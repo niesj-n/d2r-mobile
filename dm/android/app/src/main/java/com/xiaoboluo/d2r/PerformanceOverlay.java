@@ -42,6 +42,36 @@ public final class PerformanceOverlay extends View {
     private boolean enabled, running;
     private int batteryTenths = Integer.MIN_VALUE;
     private int safeLeft, safeTop, safeRight, safeBottom;
+    public interface BoundsListener { void onBounds(float left, float top, float right, float bottom); }
+    private BoundsListener boundsListener;
+
+    public void setBoundsListener(BoundsListener listener) {
+        boundsListener=listener;
+        updatePanel();
+    }
+
+    /* This rectangle is both the drawing bounds and the native exclusion area.
+       Recompute only on layout, insets or visibility changes, never per frame. */
+    private void updatePanel() {
+        float width=dp(284), height=dp(164);
+        float left=safeLeft+dp(10);
+        float right=Math.min(getWidth()-safeRight-dp(10),left+width);
+        float top=safeTop+dp(48);
+        if (top+height>getHeight()-safeBottom)
+            top=Math.max(safeTop+dp(4),getHeight()-safeBottom-height-dp(4));
+        panel.set(left,top,right,top+height);
+        if (boundsListener!=null) {
+            if (enabled && getWidth()>0 && getHeight()>0 && right>left)
+                boundsListener.onBounds(panel.left,panel.top,panel.right,panel.bottom);
+            else boundsListener.onBounds(0,0,0,0);
+        }
+        invalidate();
+    }
+
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
+        super.onSizeChanged(w,h,oldw,oldh);
+        updatePanel();
+    }
 
     public PerformanceOverlay(Context context) {
         super(context);
@@ -55,6 +85,7 @@ public final class PerformanceOverlay extends View {
         if (this.enabled == enabled) return;
         this.enabled = enabled;
         setVisibility(enabled ? VISIBLE : GONE);
+        updatePanel();
         if (enabled && isAttachedToWindow()) start();
         else if (!enabled) stop();
     }
@@ -64,7 +95,7 @@ public final class PerformanceOverlay extends View {
         safeTop = Math.max(0, top);
         safeRight = Math.max(0, right);
         safeBottom = Math.max(0, bottom);
-        invalidate();
+        updatePanel();
     }
 
     @Override protected void onAttachedToWindow() {
@@ -115,13 +146,7 @@ public final class PerformanceOverlay extends View {
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (!enabled) return;
-        float width = dp(284), height = dp(164);
-        // Keep the monitor clear of the skill controls on the right.
-        float left = safeLeft + dp(10);
-        float right = Math.min(getWidth() - safeRight - dp(10), left + width);
-        float top = safeTop + dp(48);
-        if (top + height > getHeight() - safeBottom) top = Math.max(safeTop + dp(4), getHeight() - safeBottom - height - dp(4));
-        panel.set(left, top, right, top + height);
+        float top=panel.top;
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(0xe515171b);
         canvas.drawRoundRect(panel, dp(8), dp(8), paint);

@@ -7,6 +7,9 @@ extern "C" {
 void dm_android_touch_resize(float width_dp, float height_dp, float left_dp, float right_dp, float bottom_dp);
 void dm_android_touch_tablet(int tablet);
 void dm_android_touch_margins(float left_dp, float right_dp);
+#define DM_ANDROID_TOUCH_OBSTRUCTIONS_AVAILABLE 1
+/* Same dp bounds that PerformanceOverlay draws; zero rectangle when hidden. */
+void dm_android_touch_obstructions(float safe_top_dp, float left_dp, float top_dp, float right_dp, float bottom_dp);
 #define DM_ANDROID_TOUCH_ACTIONS_AVAILABLE 1
 enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
        DM_ANDROID_ACTION_ITEM_NAMES=4, DM_ANDROID_ACTION_SORT=5 };
@@ -27,7 +30,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
 enum { DM_ANDROID_TOUCH_GLYPHS = 4 + 23 * 5, DM_ANDROID_TOUCH_HUD = DM_ANDROID_TOUCH_GLYPHS + 6 * 8,
        DM_ANDROID_TOUCH_QUICK = DM_ANDROID_TOUCH_HUD + 18, DM_ANDROID_TOUCH_QUICK_COUNT = 3,
        DM_ANDROID_TOUCH_DRAW_FLOATS = DM_ANDROID_TOUCH_QUICK + DM_ANDROID_TOUCH_QUICK_COUNT * 5 };
-/* Appended quick circles [x,y,r,visible,pressed]: map visibility, map position, item names. */
+/* Appended quick hit circles [x,y,r,visible,pressed]: bare map icon, map position, item names. */
 void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]);
 #ifdef __cplusplus
 }

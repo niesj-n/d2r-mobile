@@ -34,6 +34,7 @@ public final class TouchOverlay extends View {
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
+    private static native void nativeObstructions(float safeTop, float left, float top, float right, float bottom);
     private static native void nativeCancelPending();
     private static native void nativeLayout(float[] out);
     private static native void nativeSeedLegacySettings(int left, int right, boolean monitor);
@@ -73,7 +74,8 @@ public final class TouchOverlay extends View {
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final String lifeFormat, manaFormat, levelFormat, cancelLabel;
     private JSONObject hudUi;
-    private float safeLeft, safeRight, safeBottom;
+    private float safeLeft, safeTop, safeRight, safeBottom;
+    private float monitorLeft, monitorTop, monitorRight, monitorBottom;
     private int marginLeft, marginRight;
     public interface SettingsListener { void changed(int left, int right, boolean monitor); }
     private SettingsListener settingsListener;
@@ -113,11 +115,19 @@ public final class TouchOverlay extends View {
         setFocusable(false);
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
-    public void setSafeInsets(int leftPx, int rightPx, int bottomPx) {
-        if (safeLeft==leftPx/density && safeRight==rightPx/density && safeBottom==bottomPx/density) return;
+    public void setSafeInsets(int leftPx, int topPx, int rightPx, int bottomPx) {
+        if (safeLeft==leftPx/density && safeTop==topPx/density && safeRight==rightPx/density && safeBottom==bottomPx/density) return;
         cancelTouches();
-        safeLeft=leftPx/density; safeRight=rightPx/density; safeBottom=bottomPx/density;
+        safeLeft=leftPx/density; safeTop=topPx/density; safeRight=rightPx/density; safeBottom=bottomPx/density;
         resizeNative();
+    }
+    public void setMonitorBounds(float leftPx, float topPx, float rightPx, float bottomPx) {
+        float l=leftPx/density, t=topPx/density, r=rightPx/density, b=bottomPx/density;
+        if (monitorLeft==l && monitorTop==t && monitorRight==r && monitorBottom==b) return;
+        cancelTouches();
+        monitorLeft=l; monitorTop=t; monitorRight=r; monitorBottom=b;
+        if (inputEnabled) nativeObstructions(safeTop,l,t,r,b);
+        drawnValid=false; invalidate();
     }
     public void setEdgeMargins(int leftDp, int rightDp) {
         leftDp=Math.max(0,Math.min(96,leftDp));
@@ -147,8 +157,11 @@ public final class TouchOverlay extends View {
         }
     }
     private void resizeNative() {
-        if (inputEnabled && getWidth()>0 && getHeight()>0) nativeResize(getWidth()/density,getHeight()/density,safeLeft,safeRight,safeBottom,
-                getResources().getConfiguration().smallestScreenWidthDp>=600);
+        if (inputEnabled && getWidth()>0 && getHeight()>0) {
+            nativeResize(getWidth()/density,getHeight()/density,safeLeft,safeRight,safeBottom,
+                    getResources().getConfiguration().smallestScreenWidthDp>=600);
+            nativeObstructions(safeTop,monitorLeft,monitorTop,monitorRight,monitorBottom);
+        }
     }
     @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
         cancelTouches(); resizeNative();
@@ -353,6 +366,15 @@ public final class TouchOverlay extends View {
             bitmapPaint.setAlpha(255);
         } else caption(canvas,text,x,y-textSize*.6f,textSize,held?1:.84f);
     }
+    private void mapControl(Canvas canvas,float x,float y,float r,boolean held) {
+        if(mapArt!=null && mapArt.getWidth()>=2*mapArt.getHeight()) {
+            int frame=mapArt.getHeight(), sx=held?frame:0;
+            float half=r*.82f;
+            bitmapPaint.setAlpha(held?255:209);
+            canvas.drawBitmap(mapArt,new Rect(sx,0,sx+frame,frame),new RectF(x-half,y-half,x+half,y+half),bitmapPaint);
+            bitmapPaint.setAlpha(255);
+        } else caption(canvas,quickLabels[0],x,y-6,10,held?1:.84f);
+    }
     // skillImage：同帧位的银色剪影（无剪影图时退回原版图集、四边各裁 8%），保留明暗、统一为银灰。
     // skillImage: the silver silhouette at the same frame (without it, the original atlas trimmed 8% on each side), keeping the shading, all silver grey.
     private Bitmap glyph(int atlas,int sx,int sy,int dm,int sh) {
@@ -511,7 +533,8 @@ public final class TouchOverlay extends View {
             int p=QUICK+i*5;
             if (navigation || layout[p+3]==0 || layout[p+2]<=0) continue;
             float r=layout[p+2];
-            circleControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i],Math.min(10f,r*.48f),i==0);
+            if (i==0) mapControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0);
+            else circleControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i],Math.min(10f,r*.48f),false);
         }
         // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
         int jp=4+12*5;

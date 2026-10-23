@@ -32,6 +32,10 @@ enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
 #define dm_android_touch_cancel_pending() ((void)0)
 #endif
 
+#ifndef DM_ANDROID_TOUCH_OBSTRUCTIONS_AVAILABLE
+#define dm_android_touch_obstructions(t,l,y,r,b) ((void)0)
+#endif
+
 _Static_assert(DM_ANDROID_TOUCH_GLYPHS==119 && DM_ANDROID_TOUCH_HUD==167 && DM_ANDROID_TOUCH_QUICK==185 && DM_ANDROID_TOUCH_QUICK_COUNT==3, "The legacy prefix offsets must stay stable");
 _Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 200, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
@@ -158,6 +162,7 @@ void dm_uiscreen_set_panel(int panel) {
 }
 int dm_uiscreen_ingame(void) { return observed_ingame; }
 static void fixture(int navigation) {
+    dm_android_touch_obstructions(0,0,0,0,0);
     memset(&tc, 0, sizeof tc);
     memset(&scene, 0, sizeof scene);
     memset(queue, 0, sizeof queue);
@@ -682,14 +687,16 @@ static void test_android_default_names_wait_for_loading_and_cursor(void) {
 /* Expected appended ABI, intentionally independent of the new production enum
  * so the unchanged 185-float bridge can execute the RED regression. */
 static void test_quick_snapshot_append(void) {
-    fixture(0); scene.game=1;
+    fixture(0);
+    dm_android_touch_uimsg("PanelManager","UnloadPanel","LoadScreenPanel");
     float s[200]={0}; dm_android_touch_layout(s);
+    REQUIRE(s[4+DM_TC_MAP*5+3]==0); /* Only the appended map toggle is drawn in gameplay. */
     REQUIRE(s[188]==1); REQUIRE(s[193]==1); REQUIRE(s[198]==1);
-    REQUIRE(fabsf(s[185]-(tc.layout.target[DM_TC_MAIN].x-172))<.01f);
+    REQUIRE(s[185]<tc.layout.width*.5f && s[186]<tc.layout.height*.25f);
 }
 static void test_quick_input_regression(void) {
     fixture(0); scene.game=1;
-    float x=tc.layout.target[DM_TC_MAIN].x-172, y=tc.layout.target[DM_TC_MAIN].y-212;
+    dm_tc_target map=quick_circle(0); float x=map.x, y=map.y;
     dm_android_touch_event(0,0,x,y); dm_android_touch_event(2,0,x,y);
     REQUIRE(queue_sample()==DM_BTN_MINUS);
     REQUIRE(tc.joy_slot<0 && tc.lx==0 && tc.ly==0 && tc.rx==0 && tc.ry==0);
@@ -790,18 +797,23 @@ static void test_quick_visibility_and_native_sort_phases(void) {
     REQUIRE(product_cancel_calls==before_cancel+1 && dm_product_ui_sort(5,92)==-1);
 }
 static void test_quick_mainstream_geometry_and_margin_binding(void) {
-    const float sizes[][2]={{667,375},{800,375},{852,393},{960,440},{1024,768}};
+    const float sizes[][2]={{667,375},{800,375},{2608.0f/3,1200.0f/3},{960,440},{1024,768}};
     for (unsigned n=0;n<sizeof sizes/sizeof sizes[0];++n) for (int above=0;above<2;++above) for (int large_margin=0;large_margin<2;++large_margin) {
         fixture(0); scene.game=1; observed_swap_above=above;
         dm_android_touch_tablet(n==4);
         dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16); REQUIRE(queue_sample()==0);
         float a[DM_ANDROID_TOUCH_DRAW_FLOATS], b[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(a);
         dm_tc_target old_main=tc.layout.target[DM_TC_MAIN];
-        dm_android_touch_margins(large_margin?96:28,large_margin?96:44); REQUIRE(queue_sample()==0); read_twice(b);
+        dm_android_touch_margins(large_margin?96:0,large_margin?96:0); REQUIRE(queue_sample()==0); read_twice(b);
         float shift=tc.layout.target[DM_TC_MAIN].x-old_main.x;
         for (int i=0;i<3;++i) {
             int o=DM_ANDROID_TOUCH_QUICK+i*5; dm_tc_target q=quick_circle(i);
-            REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
+            if (i>0) {
+                REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
+                REQUIRE(fabsf(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)-214*dm_tc_scale_for_size(width,height))<.01f);
+            } else {
+                REQUIRE(b[o]>=a[o] && q.x<tc.layout.width*.5f && q.y<tc.layout.height*.25f);
+            }
             REQUIRE(b[o]==q.x && b[o+1]==q.y && b[o+2]==q.r && b[o+3]==1);
             REQUIRE(q.x-q.r>=20 && q.x+q.r<=tc.layout.width-24 && q.y-q.r>=0 && q.y+q.r<tc.layout.height-16);
             for (int t=0;t<DM_TC_COUNT;++t) {
@@ -826,10 +838,46 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             REQUIRE(queue_sample()==0);
         }
         REQUIRE(map_position_calls==1);
+        REQUIRE(fabsf(b[190]-b[195])>20 && fabsf(b[191]-b[196])>20);
         printf("DETAIL quick_geometry size=%.0fx%.0f above=%d margin96=%d main=%.2f,%.2f quick=%.2f,%.2f;r=%.2f;dy=%.2f\n",
             sizes[n][0],sizes[n][1],above,large_margin,tc.layout.target[DM_TC_MAIN].x,tc.layout.target[DM_TC_MAIN].y,
             b[185],b[186],b[187],b[191]-b[186]);
     }
+}
+
+static void test_quick_monitor_obstructions_and_cancel(void) {
+    fixture(0); scene.game=1;
+    dm_android_touch_resize(2608.0f/3,400,20,24,16); REQUIRE(queue_sample()==0);
+    float before[200], after[200]; read_twice(before);
+    /* Actual monitor dimensions in dp, including safe top and its 48dp offset. */
+    dm_android_touch_obstructions(14,30,62,314,226); REQUIRE(queue_sample()==0); read_twice(after);
+    dm_tc_target q=quick_circle(0);
+    REQUIRE(q.x-q.r>=324 && q.y-q.r==62);
+    REQUIRE(!memcmp(before,after,185*sizeof(float))); /* Preserve original controls and ABI. */
+    REQUIRE(after[185]==q.x && after[186]==q.y && after[187]==q.r);
+    map_full=1;
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_obstructions(14,30,62,314,226); /* Identical inset delivery must not cancel a held icon. */
+    read_twice(after); REQUIRE(after[188]==1 && after[189]==1);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==DM_BTN_MINUS);
+    REQUIRE(queue_sample()==0 && map_full_calls==0);
+    /* A bounds change cancels a captured DOWN and its subsequent UP. */
+    dm_android_touch_event(0,0,q.x,q.y); REQUIRE(queue_sample()==0);
+    dm_android_touch_obstructions(14,30,62,340,226);
+    read_twice(after); REQUIRE(after[188]==0);
+    REQUIRE(queue_sample()==0 && !quick[0].index);
+    dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0 && action_head==action_tail);
+    /* Wide-panel fallback stays below its actual bounds and clear of the stick. */
+    dm_android_touch_obstructions(14,30,62,840,226); REQUIRE(queue_sample()==0);
+    q=quick_circle(0);
+    REQUIRE(q.y-q.r>=236 && q.x-q.r>=20 && q.x+q.r<=width-24);
+    REQUIRE(hypotf(q.x-tc.layout.joy_x,q.y-tc.layout.joy_y)>q.r+tc.layout.joy_radius);
+    quick_tap(0,0); REQUIRE(queue_sample()==DM_BTN_MINUS); REQUIRE(queue_sample()==0);
+    dm_android_touch_margins(96,0); REQUIRE(queue_sample()==0);
+    dm_android_touch_obstructions(14,0,0,0,0); REQUIRE(queue_sample()==0);
+    q=quick_circle(0); REQUIRE(q.x-q.r>=126 && q.y-q.r==24);
+    dm_android_touch_obstructions(NAN,NAN,0,INFINITY,10); REQUIRE(queue_sample()==0);
+    q=quick_circle(0); REQUIRE(isfinite(q.x) && isfinite(q.y) && q.y-q.r==10);
 }
 
 static void run_case(const char *name, void (*body)(void)) {
@@ -871,6 +919,7 @@ int main(void) {
     run_case("quick_slide_up_and_system_cancels", test_quick_slide_up_and_system_cancels);
     run_case("quick_visibility_and_native_sort_phases", test_quick_visibility_and_native_sort_phases);
     run_case("quick_mainstream_geometry_and_margin_binding", test_quick_mainstream_geometry_and_margin_binding);
+    run_case("quick_monitor_obstructions_and_cancel", test_quick_monitor_obstructions_and_cancel);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }

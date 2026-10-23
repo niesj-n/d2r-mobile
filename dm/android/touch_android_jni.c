@@ -16,6 +16,10 @@ JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeMargins(JNIEnv 
     (void)env; (void)cls;
     dm_android_touch_margins(left, right);
 }
+JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeObstructions(JNIEnv *env, jclass cls, jfloat safe_top, jfloat left, jfloat top, jfloat right, jfloat bottom) {
+    (void)env; (void)cls;
+    dm_android_touch_obstructions(safe_top,left,top,right,bottom);
+}
 JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeAction(JNIEnv *env, jclass cls, jint action) {
     (void)env; (void)cls;
     dm_android_touch_action(action);
