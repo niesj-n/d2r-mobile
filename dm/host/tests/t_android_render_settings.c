@@ -1,4 +1,7 @@
 /* Exercise the real Custom settings load, pending/apply, discard and file save. */
+#ifdef NDEBUG
+#error Android Custom settings regression requires active assertions
+#endif
 #ifndef __ANDROID__
 #define __ANDROID__ 1
 #endif

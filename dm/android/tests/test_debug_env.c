@@ -1,5 +1,8 @@
 /* 用自造字符串验证Debug性能参数，不读资源、不启动游戏。
  * Verify Debug performance parameters with synthetic strings, without resources or launching the game. */
+#ifdef NDEBUG
+#error Debug-env regression requires active assertions
+#endif
 #define DM_ANDROID_DEBUG_ENV 1
 #include "../debug_env.h"
 #include <assert.h>

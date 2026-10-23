@@ -55,12 +55,17 @@ static inline float dm_android_render_scale_gpu_value(float ceiling, int level) 
 
 /* One completed two-second GPU sample. The selected FPS determines budget. */
 static inline int dm_android_render_scale_gpu_next(float ceiling, int level,
-                                                   double gpu_ms, double budget_ms,
+                                                   double gpu_ms, double frame_ms, double budget_ms,
                                                    int *good_windows, int *bad_windows) {
     int maximum = dm_android_render_scale_gpu_max_level(ceiling);
     if (level > maximum) level = maximum;
-    if (!(gpu_ms > 0 && budget_ms > 0)) return level;
-    if (gpu_ms >= .92 * budget_ms && level < maximum) {
+    if (!(isfinite(gpu_ms) && isfinite(frame_ms) && isfinite(budget_ms) &&
+          gpu_ms > 0 && frame_ms > 0 && budget_ms > 0)) {
+        *good_windows = *bad_windows = 0;
+        return level;
+    }
+    if (frame_ms > budget_ms && gpu_ms >= .92 * budget_ms &&
+        gpu_ms >= .85 * frame_ms && level < maximum) {
         *good_windows = 0;
         if (++*bad_windows >= 5) { *bad_windows = 0; return level + 1; }
         return level;

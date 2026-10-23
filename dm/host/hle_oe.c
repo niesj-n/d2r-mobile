@@ -280,28 +280,29 @@ __attribute__((weak)) double xbg_recent_gpu_ms(void) { return -1; }   // 空的�
 static int s3g_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_3D_SCALE_GPU"); on = e && *e == '1'; } return on; }
 static void s3g_feed(double iv_ms) {
 #ifdef __ANDROID__
-    static double elapsed; static int level, good, bad; static float prior_cfg;
+    static double elapsed; static unsigned samples; static int level, good, bad; static float prior_cfg;
     float cfg = s3_cfg();
     if (cfg != prior_cfg || atomic_exchange(&g_s3g_reset, 0)) {
-        prior_cfg = cfg; level = good = bad = 0; elapsed = 0;
+        prior_cfg = cfg; level = good = bad = 0; elapsed = 0; samples = 0;
         atomic_store(&g_s3g_scale, 0);
     }
-    if (!dm_ingame_now()) { level = good = bad = 0; elapsed = 0; atomic_store(&g_s3g_scale, 0); return; }
-    if (iv_ms <= 0) { elapsed = 0; good = bad = 0; return; }
-    elapsed += iv_ms;
+    if (!dm_ingame_now()) { level = good = bad = 0; elapsed = 0; samples = 0; atomic_store(&g_s3g_scale, 0); return; }
+    if (iv_ms <= 0) { elapsed = 0; samples = 0; good = bad = 0; return; }
+    elapsed += iv_ms; ++samples;
     if (elapsed < 2000.0) return;
+    double frame_ms = elapsed / samples;
     double gpu = xbg_recent_gpu_ms();
     int fps = mtl_fps_target();
     double cadence_hz = dm_pace_hz(mtl_display_refresh(), fps);
     double budget_ms = 1000.0 / (cadence_hz > 0 ? cadence_hz : fps);
-    elapsed = 0;
+    elapsed = 0; samples = 0;
     if (gpu <= 0) { good = bad = 0; return; }
     int old = level;
-    level = dm_android_render_scale_gpu_next(cfg, level, gpu, budget_ms, &good, &bad);
+    level = dm_android_render_scale_gpu_next(cfg, level, gpu, frame_ms, budget_ms, &good, &bad);
     if (level != old) {
         float ratio = dm_android_render_scale_gpu_value(cfg, level);
         atomic_store(&g_s3g_scale, level ? ratio : 0);
-        LOG("Android 动态 3D：目标 %d FPS，实际节拍 %.1f Hz，GPU %.1f ms，比例 %.2f（上限 %.2f）", fps, cadence_hz, gpu, ratio, cfg);
+        LOG("Android 动态 3D：目标 %d FPS，实际节拍 %.1f Hz，帧 %.1f ms、GPU %.1f ms，比例 %.2f（上限 %.2f）", fps, cadence_hz, frame_ms, gpu, ratio, cfg);
     }
 #else
     static double acc; static unsigned n; static uint64_t hold; static int lv, good, maxlv = -1, was_in; static float cfg;
