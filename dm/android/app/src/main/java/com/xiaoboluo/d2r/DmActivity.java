@@ -32,7 +32,6 @@ import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.Toast;
@@ -63,9 +62,9 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private SurfaceView view;
     private FrameLayout gameFrame;
     private TouchOverlay touchOverlay;
-    private ImageButton touchSettingsButton;
+    private TouchOverlay.ToolbarButton touchSettingsButton;
     private LinearLayout touchToolbar;
-    private final TextView[] gameplayActions = new TextView[4];
+    private final TouchOverlay.ToolbarButton[] gameplayActions = new TouchOverlay.ToolbarButton[2];
     private int safeToolbarLeft, safeToolbarRight, safeToolbarTop;
     private boolean started;
     private boolean importing;
@@ -146,27 +145,13 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    private TextView gameplayButton(int label, int description, int action) {
-        TextView button = new TextView(this);
-        button.setText(label);
-        button.setTextColor(0xffffffff);
-        button.setTextSize(12);
-        button.setGravity(Gravity.CENTER);
-        button.setBackgroundColor(0x88302b25);
-        button.setContentDescription(getString(description));
-        button.setOnClickListener(v -> touchOverlay.sendGameplayAction(action));
-        button.setOnLongClickListener(v -> true);
-        button.setVisibility(View.GONE);
-        return button;
-    }
-
     private void layoutTouchToolbar() {
         if (touchToolbar == null || gameFrame.getWidth() <= 0) return;
         if (touchToolbar.getPaddingLeft() != safeToolbarLeft || touchToolbar.getPaddingRight() != safeToolbarRight)
             touchToolbar.setPadding(safeToolbarLeft, 0, safeToolbarRight, 0);
         int cell = TouchActionBarSizing.cellWidth(gameFrame.getWidth(), safeToolbarLeft, safeToolbarRight,
                 getResources().getDisplayMetrics().density);
-        for (TextView button : gameplayActions) if (button != null && button.getLayoutParams().width != cell)
+        for (TouchOverlay.ToolbarButton button : gameplayActions) if (button != null && button.getLayoutParams().width != cell)
             button.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
         if (touchSettingsButton != null && touchSettingsButton.getLayoutParams().width != cell)
             touchSettingsButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
@@ -356,28 +341,24 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             touchToolbar = new LinearLayout(this);
             touchToolbar.setOrientation(LinearLayout.HORIZONTAL);
             touchToolbar.setGravity(Gravity.CENTER_HORIZONTAL);
-            int[] labels = {R.string.dmAndroidRunWalkShort, R.string.dmAndroidMapVisibilityShort,
-                    R.string.dmAndroidMapSizeShort, R.string.dmAndroidMapCenterShort};
-            int[] descriptions = {R.string.dmAndroidRunWalk, R.string.dmAndroidMapVisibility,
-                    R.string.dmAndroidMapSize, R.string.dmAndroidMapCenter};
-            int[] actions = {TouchOverlay.ACTION_RUN_WALK, TouchOverlay.ACTION_MAP_VISIBILITY,
-                    TouchOverlay.ACTION_MAP_SIZE, TouchOverlay.ACTION_MAP_CENTER};
+            int[] labels = {R.string.dmAndroidMapVisibilityShort, R.string.dmAndroidMapPositionShort};
+            int[] descriptions = {R.string.dmAndroidMapVisibility, R.string.dmAndroidMapPosition};
+            int[] actions = {TouchOverlay.ACTION_MAP_VISIBILITY, TouchOverlay.ACTION_MAP_POSITION};
             for (int i=0; i<gameplayActions.length; i++) {
-                gameplayActions[i] = gameplayButton(labels[i], descriptions[i], actions[i]);
+                final int action = actions[i];
+                gameplayActions[i] = touchOverlay.toolbarButton(labels[i], descriptions[i], i==0,
+                        () -> touchOverlay.sendGameplayAction(action));
+                gameplayActions[i].setVisibility(View.GONE);
                 touchToolbar.addView(gameplayActions[i], new LinearLayout.LayoutParams(dp(48), dp(48)));
             }
-            touchSettingsButton = new ImageButton(this);
-            touchSettingsButton.setImageResource(android.R.drawable.ic_menu_preferences);
-            touchSettingsButton.setContentDescription(getString(R.string.dmAndroidTouchSettings));
-            touchSettingsButton.setBackgroundColor(0x88302b25);
-            touchSettingsButton.setAlpha(0.8f);
-            touchSettingsButton.setOnClickListener(v -> showTouchSettings());
+            touchSettingsButton = touchOverlay.toolbarButton(R.string.dmAndroidTouchSettingsShort,
+                    R.string.dmAndroidTouchSettings, false, this::showTouchSettings);
             touchToolbar.addView(touchSettingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
             FrameLayout.LayoutParams toolbarPlacement = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);
             toolbarPlacement.topMargin = dp(8);
             gameFrame.addView(touchToolbar, toolbarPlacement);
             touchOverlay.setGameplayListener(gameplay -> {
-                for (TextView action : gameplayActions) action.setVisibility(gameplay ? View.VISIBLE : View.GONE);
+                for (TouchOverlay.ToolbarButton action : gameplayActions) action.setVisibility(gameplay ? View.VISIBLE : View.GONE);
                 layoutTouchToolbar();
             });
             layoutTouchToolbar();
@@ -523,7 +504,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     }
 
     private void releaseTouches() {
-        if (touchOverlay != null) touchOverlay.cancelTouches();
+        if (touchOverlay != null) { touchOverlay.cancelToolbarPresses(); touchOverlay.cancelTouches(); }
         if (started) nativeTouch(0, new int[0], new float[0], new float[0]);
     }
 

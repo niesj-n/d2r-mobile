@@ -8,8 +8,7 @@ void dm_android_touch_resize(float width_dp, float height_dp, float left_dp, flo
 void dm_android_touch_tablet(int tablet);
 void dm_android_touch_margins(float left_dp, float right_dp);
 #define DM_ANDROID_TOUCH_ACTIONS_AVAILABLE 1
-enum { DM_ANDROID_ACTION_RUN=1, DM_ANDROID_ACTION_MAP_VISIBILITY=2,
-       DM_ANDROID_ACTION_MAP_SIZE=3, DM_ANDROID_ACTION_MAP_CENTER=4 };
+enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3 };
 void dm_android_touch_action(int action);
 #define DM_ANDROID_TOUCH_CANCEL_PENDING_AVAILABLE 1
 void dm_android_touch_cancel_pending(void);

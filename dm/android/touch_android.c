@@ -3,6 +3,8 @@
 #include "../host/dm_input.h"
 #include "../host/dm_cursor.h"
 #include "../host/dm_actions.h"
+/* Queued by the host and applied on the guest sampling thread. */
+extern void dm_ui_map_cycle_position(void);
 #include "../host/dm_hud.h"
 #include "../host/dm_custom.h"
 #include "../host/dm_world.h"
@@ -119,7 +121,7 @@ void dm_android_touch_tablet(int tablet) {
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_action(int action) {
-    if (action < DM_ANDROID_ACTION_RUN || action > DM_ANDROID_ACTION_MAP_CENTER) return;
+    if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION) return;
     pthread_mutex_lock(&lock);
     if (focused && ready && scene.game && !frontend && !tc.navigation_mode && action_tail-action_head < 256)
         action_queue[action_tail++ % 256] = action;
@@ -400,16 +402,10 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         if (action_release) action_release = 0; /* One sampled release between key presses. */
         else if (action_head != action_tail) {
             int action = action_queue[action_head++ % 256];
-            if (action == DM_ANDROID_ACTION_RUN || action == DM_ANDROID_ACTION_MAP_VISIBILITY) {
-                *buttons |= action == DM_ANDROID_ACTION_RUN ? DM_BTN_LS : DM_BTN_MINUS;
+            if (action == DM_ANDROID_ACTION_MAP_VISIBILITY) {
+                *buttons |= DM_BTN_MINUS;
                 action_release = 1;
-            } else {
-                float cell;
-                if (dm_ui_map_geom(&cell)) {
-                    if (action == DM_ANDROID_ACTION_MAP_SIZE) dm_ui_map_toggle();
-                    else if (action == DM_ANDROID_ACTION_MAP_CENTER) dm_ui_map_recenter();
-                }
-            }
+            } else if (action == DM_ANDROID_ACTION_MAP_POSITION) dm_ui_map_cycle_position();
         }
     } else { action_head = action_tail = 0; action_release = 0; }
     *buttons |= tc.buttons;

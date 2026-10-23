@@ -24,6 +24,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import org.json.JSONObject;
@@ -31,7 +32,7 @@ import org.json.JSONArray;
 
 /** 透明悬浮触摸层：与游戏Surface同尺寸，不挤占游戏高度。 | Transparent overlay sharing the game Surface bounds without reducing its height. */
 public final class TouchOverlay extends View {
-    public static final int ACTION_RUN_WALK=1, ACTION_MAP_VISIBILITY=2, ACTION_MAP_SIZE=3, ACTION_MAP_CENTER=4;
+    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3;
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
@@ -69,6 +70,7 @@ public final class TouchOverlay extends View {
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
     private final Bitmap[] skillAtlases=new Bitmap[9], silAtlases=new Bitmap[9];
     private Bitmap mapArt, circleArt, socketArt;
+    private final ArrayList<ToolbarButton> toolbarButtons = new ArrayList<>();
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final String lifeFormat, manaFormat, levelFormat, cancelLabel;
     private JSONObject hudUi;
@@ -89,6 +91,77 @@ public final class TouchOverlay extends View {
     }
     public void sendGameplayAction(int action) {
         if (inputEnabled && gameplay) nativeAction(action);
+    }
+
+    public ToolbarButton toolbarButton(int label, int description, boolean mapIcon, Runnable onClick) {
+        ToolbarButton button = new ToolbarButton(getContext(), getContext().getString(label), mapIcon);
+        button.setContentDescription(getContext().getString(description));
+        button.setOnClickListener(v -> onClick.run());
+        toolbarButtons.add(button);
+        return button;
+    }
+
+    public void cancelToolbarPresses() {
+        for (ToolbarButton button : toolbarButtons) button.cancelPress();
+    }
+
+    public final class ToolbarButton extends View {
+        private final String label;
+        private final boolean mapIcon;
+        private int activePointer = -1;
+
+        private ToolbarButton(Context context, String label, boolean mapIcon) {
+            super(context);
+            this.label = label;
+            this.mapIcon = mapIcon;
+            setFocusable(true);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        }
+
+        private void cancelPress() {
+            activePointer = -1;
+            setPressed(false);
+            invalidate();
+        }
+
+        private boolean inside(float x, float y) {
+            return x >= 0 && y >= 0 && x < getWidth() && y < getHeight();
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                if (!isEnabled()) return false;
+                activePointer = event.getPointerId(0);
+                setPressed(true);
+                invalidate();
+                return true;
+            }
+            if (activePointer < 0) return false;
+            if (action == MotionEvent.ACTION_CANCEL) { cancelPress(); return true; }
+            int index = event.findPointerIndex(activePointer);
+            if (index < 0) { cancelPress(); return true; }
+            if (action == MotionEvent.ACTION_MOVE && !inside(event.getX(index), event.getY(index))) {
+                cancelPress(); return true;
+            }
+            if (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.getActionIndex()) == activePointer) {
+                cancelPress(); return true;
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                boolean click = inside(event.getX(index), event.getY(index));
+                cancelPress();
+                if (click) performClick();
+                return true;
+            }
+            return true;
+        }
+
+        @Override public boolean performClick() { super.performClick(); return true; }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            drawToolbarControl(canvas, label, mapIcon, isPressed(), getWidth(), getHeight());
+        }
     }
 
     /** labels为本地化表中的15项：12键、摇杆、换组、难度；menuLabels为导航态前五键。 | Pass 15 localized game labels and five navigation labels from the shared string table. */
@@ -126,6 +199,7 @@ public final class TouchOverlay extends View {
         if (inputEnabled==enabled) return;
         if (!enabled) { cancelTouches(); publishGameplay(false); }
         inputEnabled=enabled;
+        for (ToolbarButton button : toolbarButtons) button.invalidate();
         drawnValid=false; invalidate();
         if (enabled) {
             images.clear(); art.clear(); glyphs.clear(); glowOffsets.clear();
@@ -133,6 +207,7 @@ public final class TouchOverlay extends View {
                 skillAtlases[i]=image("touchart/dm_native_skill_"+i+".png"); silAtlases[i]=image("hud_v4_ui/sil_dm_native_skill_"+i+".png");
             }
             mapArt=image("touchart/dm_native_map.png"); circleArt=image("touchart/dm_native_circle.png"); socketArt=image("touchart/dm_mobile_socket.png");
+            for (ToolbarButton button : toolbarButtons) button.invalidate();
             try { hudUi=new JSONObject(new String(Files.readAllBytes(new File(overlayRoot,"hud_v4_ui/ui.json").toPath()),StandardCharsets.UTF_8)); }
             catch(Exception ignored) { hudUi=null; }
             resizeNative();
@@ -330,6 +405,28 @@ public final class TouchOverlay extends View {
         paint.setTypeface(Typeface.SERIF); paint.setTextSize(size); paint.setTextAlign(Paint.Align.CENTER); paint.setColor(rgba(.85,.79,.65,alpha));
         c.drawText(value,cx,top-paint.ascent(),paint); paint.setTypeface(null);
     }
+    private void circleControl(Canvas canvas,float x,float y,float r,boolean held,String text,float textSize,boolean mapIcon) {
+        RectF bounds=new RectF(x-r,y-r,x+r,y+r);
+        if(circleArt!=null) {
+            bitmapPaint.setAlpha(held?153:71);
+            canvas.drawBitmap(circleArt,null,bounds,bitmapPaint);
+            bitmapPaint.setAlpha(255);
+        } else button(canvas,x,y,r,held,false,false);
+        if(mapIcon && mapArt!=null && mapArt.getWidth()>=2*mapArt.getHeight()) {
+            int frame=mapArt.getHeight(),sx=held?frame:0;
+            float half=r*.62f;
+            bitmapPaint.setAlpha(held?255:209);
+            canvas.drawBitmap(mapArt,new Rect(sx,0,sx+frame,frame),new RectF(x-half,y-half,x+half,y+half),bitmapPaint);
+            bitmapPaint.setAlpha(255);
+        } else caption(canvas,text,x,y-textSize*.6f,textSize,held?1:.84f);
+    }
+    private void drawToolbarControl(Canvas canvas,String label,boolean mapIcon,boolean held,int widthPx,int heightPx) {
+        canvas.save(); canvas.scale(density,density);
+        float x=widthPx/density/2f,y=heightPx/density/2f;
+        float r=Math.min(x,y)*.92f;
+        circleControl(canvas,x,y,r,held,label,Math.min(10f,r*.48f),mapIcon);
+        canvas.restore();
+    }
     // skillImage：同帧位的银色剪影（无剪影图时退回原版图集、四边各裁 8%），保留明暗、统一为银灰。
     // skillImage: the silver silhouette at the same frame (without it, the original atlas trimmed 8% on each side), keeping the shading, all silver grey.
     private Bitmap glyph(int atlas,int sx,int sy,int dm,int sh) {
@@ -479,17 +576,10 @@ public final class TouchOverlay extends View {
             // 其余圆钮：原版圆框图（按下更实）+ 图标或字。地图钮平时画原版地图图标（36×36 一格，按住第 1 格）；拖技能时变「取消」：暗红底 + 字。
             // Other buttons: the original circle image (more opaque when held) + icon or text. The map button draws the original map icon (36x36 frames,
             // frame 1 held); while a skill is dragged it becomes "Cancel": a dark red base + text.
-            RectF b=new RectF(x-r,y-r,x+r,y+r);
             boolean cancel=!navigation && i==11 && layout[HUD+15]!=0;
-            if(cancel) { Paint f=new Paint(); f.setColor(rgba(.55,.05,.04,.36)); canvas.drawRect(b,f); }
-            if(circleArt!=null) { bitmapPaint.setAlpha(held?153:71); canvas.drawBitmap(circleArt,null,b,bitmapPaint); bitmapPaint.setAlpha(255); }
-            if(!navigation && i==11 && !cancel && mapArt!=null && mapArt.getWidth()>=2*mapArt.getHeight()) {
-                int f=mapArt.getHeight(),sx=held?f:0; float half=r*.62f;
-                bitmapPaint.setAlpha(held?255:209); canvas.drawBitmap(mapArt,new Rect(sx,0,sx+f,f),new RectF(x-half,y-half,x+half,y+half),bitmapPaint); bitmapPaint.setAlpha(255);
-                continue;
-            }
+            if(cancel) { Paint f=new Paint(); f.setColor(rgba(.55,.05,.04,.36)); canvas.drawRect(new RectF(x-r,y-r,x+r,y+r),f); }
             String text=navigation && i==5 ? "" : label(i,navigation); float ts=(i==0?13:10)*k;
-            caption(canvas,text,x,y-ts*.6f,ts,held?1:.84f);
+            circleControl(canvas,x,y,r,held,text,ts,!navigation && i==11 && !cancel);
         }
         // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
         int jp=4+12*5;
