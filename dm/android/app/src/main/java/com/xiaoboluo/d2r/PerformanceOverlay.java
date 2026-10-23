@@ -116,11 +116,12 @@ public final class PerformanceOverlay extends View {
         super.onDraw(canvas);
         if (!enabled) return;
         float width = dp(284), height = dp(164);
-        float right = getWidth() - safeRight - dp(10);
+        // Keep the monitor clear of the skill controls on the right.
+        float left = safeLeft + dp(10);
+        float right = Math.min(getWidth() - safeRight - dp(10), left + width);
         float top = safeTop + dp(48);
-        if (right - width < safeLeft + dp(6)) right = Math.min(getWidth() - dp(4), safeLeft + width + dp(6));
         if (top + height > getHeight() - safeBottom) top = Math.max(safeTop + dp(4), getHeight() - safeBottom - height - dp(4));
-        panel.set(right - width, top, right, top + height);
+        panel.set(left, top, right, top + height);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(0xe515171b);
         canvas.drawRoundRect(panel, dp(8), dp(8), paint);
