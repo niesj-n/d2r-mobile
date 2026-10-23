@@ -76,6 +76,8 @@ These are already in the repository; nothing to download. Each keeps its license
 | `dm/third_party/bcdec` | BC texture decompression | MIT or Unlicense (your choice) | <https://github.com/iOrange/bcdec> |
 | `dm/third_party/flip` | Image difference metric | BSD 3-Clause | <https://github.com/NVlabs/flip> |
 | `dm/third_party/libdeflate` | Decompression | MIT | <https://github.com/ebiggers/libdeflate> |
+| `dm/third_party/adrenotools` | Rootless, app-local Android Vulkan driver loading (pinned `8fae8ce`; nested liblinkernsbypass `aa397589`) | BSD 2-Clause | <https://github.com/bylaws/libadrenotools> |
+| `dm/third_party/volk` | One dynamically selected Vulkan dispatch (`0dc3ce0`) | MIT | <https://github.com/zeux/volk> |
 | `dm/gfx/vulkan/engine/third_party/bcdec` | BC texture decompression in the Android Vulkan graphics layer (same project as the bcdec above, pinned separately) | MIT or Unlicense (your choice) | <https://github.com/iOrange/bcdec> |
 | `dm/gfx/vulkan/engine/third_party/pillow_reference` | Pillow's BC6 decoding reference tables, used only by the Vulkan graphics layer's tests | HPND (Pillow's license) | <https://github.com/python-pillow/Pillow> |
 | `dm/third_party/ryujinx` | The shader translator from Ryujinx 1.3.2 (three projects, unmodified), which translates the original Switch shaders to SPIR-V | MIT | <https://github.com/Ryubing> |

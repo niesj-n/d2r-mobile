@@ -1,0 +1,4 @@
+# Unused upstream driver-building tools are intentionally omitted from this vendor subset.
+/tools/
+/README.md
+/lib/linkernsbypass/README.md

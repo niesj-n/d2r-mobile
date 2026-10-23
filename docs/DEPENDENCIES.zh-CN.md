@@ -76,6 +76,8 @@ English: [DEPENDENCIES.md](DEPENDENCIES.md)
 | `dm/third_party/bcdec` | BC 贴图解压 | MIT 或 Unlicense（任选） | <https://github.com/iOrange/bcdec> |
 | `dm/third_party/flip` | 画面差异度量 | BSD 3-Clause | <https://github.com/NVlabs/flip> |
 | `dm/third_party/libdeflate` | 解压 | MIT | <https://github.com/ebiggers/libdeflate> |
+| `dm/third_party/adrenotools` | 安卓应用内无 Root 加载 Vulkan 驱动（固定 `8fae8ce`，内含 liblinkernsbypass `aa397589`） | BSD 2-Clause | <https://github.com/bylaws/libadrenotools> |
+| `dm/third_party/volk` | 统一的动态 Vulkan 函数分发表（`0dc3ce0`） | MIT | <https://github.com/zeux/volk> |
 | `dm/gfx/vulkan/engine/third_party/bcdec` | 安卓 Vulkan 图形层里解压 BC 贴图（与上面的 bcdec 同源，单独固定了版本） | MIT 或 Unlicense（任选） | <https://github.com/iOrange/bcdec> |
 | `dm/gfx/vulkan/engine/third_party/pillow_reference` | Pillow 的 BC6 解码参考表，只用于 Vulkan 图形层的测试 | HPND（Pillow 的许可证） | <https://github.com/python-pillow/Pillow> |
 | `dm/third_party/ryujinx` | Ryujinx 1.3.2 的着色器翻译库（三个项目，未修改），把 Switch 原版着色器翻译成 SPIR-V | MIT | <https://github.com/Ryubing> |

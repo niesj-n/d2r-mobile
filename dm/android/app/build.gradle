@@ -1,10 +1,10 @@
 // 安卓 App。原生库两种来法：
 //   缺省：externalNativeBuild 用 dm/android/CMakeLists.txt 现编（要 -PdmGenDir=<由游戏文件生成的宿主表头目录>，见该文件头）；
-//   -PdmPrebuiltJni=<目录>：直接打包已编好的 <目录>/arm64-v8a/libdm.so（构建机上 CMake 不可用时）。
+//   -PdmPrebuiltJni=<目录>：直接打包已编好的 arm64-v8a/libdm.so、libhook_impl.so 和 libmain_hook.so（构建机上 CMake 不可用时）。
 //   -PdmAppId=<包名>：换一个包名装（与别人签名的同名包并排装来对照时用；缺省 com.xiaoboluo.d2r）。
 // Android App. Two ways to get the native library:
 //   default: externalNativeBuild builds it with dm/android/CMakeLists.txt (needs -PdmGenDir=<directory of host headers generated from the game files>, see that file's header);
-//   -PdmPrebuiltJni=<dir>: package the already built <dir>/arm64-v8a/libdm.so directly (when CMake is unavailable on the build machine).
+//   -PdmPrebuiltJni=<dir>: package built arm64-v8a/libdm.so, libhook_impl.so and libmain_hook.so (when CMake is unavailable on the build machine).
 //   -PdmAppId=<id>: install under another application id (to sit beside a same-name package signed by someone else; default com.xiaoboluo.d2r).
 plugins { id 'com.android.application' }
 
@@ -56,13 +56,20 @@ android {
         if (!prebuilt) externalNativeBuild { cmake {
             arguments "-DDM_GEN_DIR=${project.findProperty('dmGenDir') ?: ''}"
             if (project.findProperty('dmPython')) arguments "-DPython3_EXECUTABLE=${project.property('dmPython')}"
-            targets 'dm'
+            targets 'dm', 'hook_impl', 'main_hook'
         } }
     }
     if (!prebuilt) externalNativeBuild { cmake { path '../CMakeLists.txt'; version '3.31.6' } }
-    if (prebuilt) sourceSets { main { jniLibs.srcDirs = [prebuilt] } }
+    if (prebuilt) {
+        for (String library : ['libdm.so', 'libhook_impl.so', 'libmain_hook.so']) {
+            if (!file("${prebuilt}/arm64-v8a/${library}").isFile())
+                throw new GradleException("dmPrebuiltJni also requires arm64-v8a/${library}")
+        }
+        sourceSets { main { jniLibs.srcDirs = [prebuilt] } }
+    }
     sourceSets { main { res.srcDir(startupStrings.get().asFile); res.srcDir(launcherIcon.get().asFile) } }
-    packaging { jniLibs { useLegacyPackaging false; keepDebugSymbols += ['**/*.so'] } }
+    // libadrenotools locates its hooks through ApplicationInfo.nativeLibraryDir.
+    packaging { jniLibs { useLegacyPackaging true; keepDebugSymbols += ['**/*.so'] } }
     buildFeatures { buildConfig true }
     defaultConfig { manifestPlaceholders = [dmAppLabel: appLabel] }
     // 正式版签名：钥匙不进仓库，路径与密码从环境变量来（tools/shell_apk.sh release 读本机 ~/.config/dm-android/release.env）；没设就不签
