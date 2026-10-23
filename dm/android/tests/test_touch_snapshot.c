@@ -85,7 +85,9 @@ int dm_ui_tap_box(void) { return 0; }
 uint32_t dm_ui_cur_stack_id(void) { return 0; }
 uint32_t dm_ui_hover_unid(void) { return 0; }
 int dm_ui_targeting(void) { return 0; }
+#ifndef DM_ANDROID_REAL_FRONTEND_DRAG
 int dm_ui_touch_active(void) { return 0; }
+#endif
 int dm_ui_bind_active(void) { return 0; }
 int dm_belt_rows(int *expanded) { if (expanded) *expanded = 0; return 1; }
 void dm_hud_get(dm_hud_info *out) { memset(out, 0, sizeof *out); }
@@ -125,12 +127,17 @@ void dm_stat_add(int stat,int n) { (void)stat; (void)n; unexpected_host_call(__f
 void dm_skill_add_selected(void) { unexpected_host_call(__func__); }
 
 void dm_cursor_set_screen(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; unexpected_host_call(__func__); }
+#ifdef DM_ANDROID_REAL_FRONTEND_DRAG
+/* Generated directly from dm_cursor.c by test_frontend_drag.py. */
+#include "frontend_cursor_drag.inc"
+#else
 void dm_ui_touch(int phase, float x, float y) { (void)x; (void)y; if (!allow_synthetic_touch) unexpected_host_call(__func__); REQUIRE(phase==0 || phase==2); ++synthetic_touch_calls; }
 int dm_ui_fe_drag_ok(void) { unexpected_host_call(__func__); return 0; }
 void dm_ui_drag_begin(int kind, float x, float y, float tolerance) { (void)kind; (void)x; (void)y; (void)tolerance; unexpected_host_call(__func__); }
 void dm_ui_drag_move(float x, float y) { (void)x; (void)y; unexpected_host_call(__func__); }
 void dm_ui_drag_end(void) { unexpected_host_call(__func__); }
 void dm_ui_drag_lift(float y) { (void)y; unexpected_host_call(__func__); }
+#endif
 int dm_ui_item_at_now(float x, float y) { (void)x; (void)y; unexpected_host_call(__func__); return 0; }
 int dm_ui_drop_at_now(float x, float lifted, float finger) { (void)x; (void)lifted; (void)finger; unexpected_host_call(__func__); return 0; }
 int dm_ui_drop_bag(void) { unexpected_host_call(__func__); return 0; }

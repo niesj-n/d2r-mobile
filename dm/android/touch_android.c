@@ -59,10 +59,10 @@ static uint64_t epoch = 1, world = 1, pulse_epoch, pulse_sample, resume_sample;
 static double pulse_hold_start;
 static unsigned seen_world, seen_mouse, seen_tab, seen_use, seen_ident, seen_long, seen_item, seen_stack;
 /* 前端页面（主菜单 / 选角 / 建角 / 读取画面，即不在局内），同 iOS front_ios.m frontendMode：不画控件，第一根手指直接当原生点击交给游戏界面
-   （dm_ui_touch → 鼠标消息，dm_cursor.c），纵向拖过 10 点改成滚动。只在装了触屏覆盖层（DM_ROMFS_OVERLAY）时这样：覆盖层把选角页换成键鼠版
+   （dm_ui_touch → 鼠标消息，dm_cursor.c），拖过 10 点按主轴改成纵向滚动或横向滑块手势。只在装了触屏覆盖层（DM_ROMFS_OVERLAY）时这样：覆盖层把选角页换成键鼠版
    （「开始」「创建新角色」靠点）；没有覆盖层时前端是原版手柄页，仍走导航键。
    Front-end pages (main menu / character select / creation / loading, i.e. not in a run), as iOS front_ios.m frontendMode: no controls are drawn, and
-   the first finger goes straight to the game UI as a native click (dm_ui_touch → mouse messages, dm_cursor.c); a vertical drag past 10 points scrolls.
+   the first finger goes straight to the game UI as a native click (dm_ui_touch → mouse messages, dm_cursor.c); past 10 points, the dominant axis chooses scroll or slider drag.
    Only with the touch overlay (DM_ROMFS_OVERLAY): it turns character select into the keyboard-and-mouse page ("Play", "Create New" are tapped);
    without it the front end is the original controller page and keeps the navigation keys. */
 static int frontend, fe_slot = -1, fe_drag;
@@ -79,9 +79,10 @@ static void fe_end_locked(void) {
 static void fe_event_locked(const touch_event *e) {
     if (e->phase == 0 && fe_slot < 0) { fe_slot = e->slot; fe_x0 = e->x; fe_y0 = e->y; fe_drag = 0; }
     if (e->slot != fe_slot) return;
-    float nx = e->x / width, ny = e->y / height, dy = fabsf(e->y - fe_y0);
-    if (e->phase == 1 && !fe_drag && dy > 10 && dy > fabsf(e->x - fe_x0) && dm_ui_fe_drag_ok()) {
-        fe_drag = 1; dm_ui_touch(3, 0, 0); dm_ui_drag_begin(1, fe_x0 / width, fe_y0 / height, 0);
+    float nx = e->x / width, ny = e->y / height, dx = fabsf(e->x - fe_x0), dy = fabsf(e->y - fe_y0);
+    if (e->phase == 1 && !fe_drag && (dx > 10 || dy > 10) && dm_ui_fe_drag_ok()) {
+        fe_drag = dx > dy ? 2 : 1;
+        dm_ui_touch(3, 0, 0); dm_ui_drag_begin(fe_drag, fe_x0 / width, fe_y0 / height, 0);
     }
     if (fe_drag) { if (e->phase == 1) dm_ui_drag_move(nx, ny); else fe_end_locked(); return; }
     if (e->phase == 3) { fe_end_locked(); return; }
