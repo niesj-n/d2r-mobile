@@ -35,7 +35,16 @@ def augment_panel(text, path):
     pos = text.rstrip().rfind(']')
     if pos < 0 or not text.rstrip().endswith('}'):
         raise ValueError('product widgets require a root children array: ' + path)
-    child = _button('Sort', 'dmPanelSort', 950 if inventory else 1100, 1330 if inventory else 1300)
+    child = _button('Sort', 'dmPanelSort', 1210 if inventory else 1100, 1323 if inventory else 1300)
+    if inventory:
+        # The final inventory bottom row already contains Pouch (222..502),
+        # gold (512..906) and Store (916..1187). Its grid ends at x1196 and
+        # ConsoleRightPanelRect ends at x1408: use that separate right strip.
+        # The same native Small art as Store is 366x92 game units. At exact
+        # scale .5 it fits 1210..1393; 64-point text becomes 32-point on screen.
+        fields = child['fields']
+        fields['rect'].update(width=366, height=92, scale=.5)
+        fields.update(filename='FrontEnd/HD/Final/FrontEnd_ButtonSmall', pointSize=64)
     prefix = text[:pos].rstrip()
     if not prefix.endswith(('[', ',')): prefix += ','
     return prefix + '\n' + json.dumps(child, ensure_ascii=False, indent=1) + '\n' + text[pos:]

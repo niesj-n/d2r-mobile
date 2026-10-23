@@ -35,7 +35,12 @@ def widgets():
 def inv_layout(s):
     if '"TouchPouchBox"' in s: raise SystemExit('pouch_layout：物品栏布局里已经有 TouchPouchBox')
     i = s.rstrip().rfind(']'); assert s.rstrip().endswith('}') and i > 0
-    return s[:i].rstrip(' ') + widgets() + '    ' + s[i:]
+    head = s[:i].rstrip(' ')
+    # Earlier layout stages may end their final child without a trailing
+    # comma. Preserve the historical output byte-for-byte when it is present.
+    if not head.rstrip().endswith(('[', ',')):
+        head = head.rstrip() + ',\n'
+    return head + widgets() + '    ' + s[i:]
 
 def build(romfs, outdir, repl):
     out = {}
