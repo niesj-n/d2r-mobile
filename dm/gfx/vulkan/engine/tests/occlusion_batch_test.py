@@ -63,6 +63,7 @@ void vkCmdEndQuery(unsigned cmd,unsigned pool,unsigned index){
 }
 struct OpenPass{unsigned cmd=0;bool depth_attached=false,depth_used=false;} open_pass;
 void pass_prof_end(unsigned){}
+void ghost_flush_open_pass(){} // tested separately by ui_ghost_source_test.py
 // end_open_pass's per-op pass-end and idle-depth counters (diagnostics only).
 uint64_t depth_idle_passes=0,pass_end_by[64]={};unsigned cur_op=0;void pass_prof_depth_idle(unsigned){}
 void vkCmdEndRenderPass(unsigned cmd){if(active_id || pass_cmd!=cmd)failure=7;}

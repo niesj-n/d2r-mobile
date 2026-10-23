@@ -132,7 +132,7 @@ void mtl_mem_stat(unsigned long long frame, unsigned long long rss_mb, int heap_
 }
 void mtl_res_snapshot(mtl_res_count *out) { memset(out, 0, sizeof *out); out->pools = (uint32_t)g_npool; }
 void mtl_res_counts(uint32_t tick, const char *why) { xbg_game_stats s; xbg_game_get_stats(&s); VLOG("资源 拍 %u（%s）：内存池 %d，绘制 %llu，派发 %llu", tick, why, g_npool, (unsigned long long)s.draws, (unsigned long long)s.dispatches); }
-void mtl_ui_ghost(int on, float px, float py, const float grid[4], float cx, float cy) { (void)on; (void)px; (void)py; (void)grid; (void)cx; (void)cy; }
-int mtl_ui_ghost_rect(float r[4]) { (void)r; return 0; }
+void mtl_ui_ghost(int on, float px, float py, const float grid[4], float cx, float cy) { xbg_ui_ghost(on,px,py,grid,cx,cy); }
+int mtl_ui_ghost_rect(float r[4]) { return xbg_ui_ghost_rect(r); }
 int dm_nvn_ruler_truth(void) { return 0; }
 void dm_gfx_shot_at(long k, const char *path) { (void)k; VLOG("截图接口暂未接入：%s", path); }

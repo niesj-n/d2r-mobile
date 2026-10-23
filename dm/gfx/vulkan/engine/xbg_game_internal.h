@@ -46,6 +46,10 @@ void xbg_legacy_finish(void);
 typedef struct xbg_frame_counters { uint64_t pipelines,pipeline_ns,shader_loads,shader_load_ns,uploads,reuploads,upload_bytes,upload_ns; } xbg_frame_counters;
 void xbg_game_frame_counters(xbg_frame_counters *out);
 void xbg_game_set_frame(uint64_t frame);
+/* Thread-safe host drag intent and last same-gesture authentic source rectangle.
+ * Coordinates are normalized within the UI rectangle. off revokes immediately. */
+void xbg_ui_ghost(int on,float px,float py,const float grid[4],float cx,float cy);
+int xbg_ui_ghost_rect(float r[4]);
 double xbg_game_gpu_ms(uint64_t frame);
 /* Extension records retain the original command layout header. */
 typedef struct xbg_indirect { uint64_t arguments,count_address,index_address; int32_t primitive,index_type,max_count,stride; } xbg_indirect;
