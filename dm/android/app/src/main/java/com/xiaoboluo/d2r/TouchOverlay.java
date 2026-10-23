@@ -39,7 +39,9 @@ public final class TouchOverlay extends View {
     private static native void nativeLayout(float[] out);
     private static native void nativeSeedLegacySettings(int left, int right, boolean monitor);
     private static native boolean nativeReadSettings(int[] values);
+    private static native boolean nativeReadMonitorStyle(int[] values);
     private final int[] settingsProbe = new int[3], appliedSettings = {-1, -1, -1};
+    private final int[] monitorStyleProbe = new int[2], appliedMonitorStyle = {-1, -1};
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final int GLYPHS=119, HUD=167, QUICK=185, DRAW_FLOATS=200;
@@ -79,7 +81,9 @@ public final class TouchOverlay extends View {
     private float monitorLeft, monitorTop, monitorRight, monitorBottom;
     private int marginLeft, marginRight;
     public interface SettingsListener { void changed(int left, int right, boolean monitor); }
+    public interface MonitorStyleListener { void changed(int fontSize, int transparency); }
     private SettingsListener settingsListener;
+    private MonitorStyleListener monitorStyleListener;
     private boolean running, inputEnabled;
 
     public static void seedLegacySettings(int left, int right, boolean monitor) {
@@ -93,11 +97,23 @@ public final class TouchOverlay extends View {
     }
 
     private void syncAppliedSettings() {
-        if (!nativeReadSettings(settingsProbe) || Arrays.equals(settingsProbe, appliedSettings)) return;
-        System.arraycopy(settingsProbe, 0, appliedSettings, 0, appliedSettings.length);
-        setEdgeMargins(appliedSettings[0], appliedSettings[1]);
-        if (settingsListener != null)
-            settingsListener.changed(appliedSettings[0], appliedSettings[1], appliedSettings[2] != 0);
+        if (nativeReadSettings(settingsProbe) && !Arrays.equals(settingsProbe, appliedSettings)) {
+            System.arraycopy(settingsProbe, 0, appliedSettings, 0, appliedSettings.length);
+            setEdgeMargins(appliedSettings[0], appliedSettings[1]);
+            if (settingsListener != null)
+                settingsListener.changed(appliedSettings[0], appliedSettings[1], appliedSettings[2] != 0);
+        }
+        if (nativeReadMonitorStyle(monitorStyleProbe) && !Arrays.equals(monitorStyleProbe, appliedMonitorStyle)) {
+            System.arraycopy(monitorStyleProbe, 0, appliedMonitorStyle, 0, appliedMonitorStyle.length);
+            if (monitorStyleListener != null)
+                monitorStyleListener.changed(appliedMonitorStyle[0], appliedMonitorStyle[1]);
+        }
+    }
+
+    public void setMonitorStyleListener(MonitorStyleListener listener) {
+        monitorStyleListener = listener;
+        if (listener != null && appliedMonitorStyle[0] >= 0)
+            listener.changed(appliedMonitorStyle[0], appliedMonitorStyle[1]);
     }
 
     /** labels为本地化表中的15项：12键、摇杆、换组、难度；menuLabels为导航态前五键。 | Pass 15 localized game labels and five navigation labels from the shared string table. */

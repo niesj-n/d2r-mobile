@@ -95,6 +95,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         view = new SurfaceView(this);
         view.getHolder().addCallback(this);
         gameFrame = new FrameLayout(this);
+        gameFrame.setMotionEventSplittingEnabled(true);
         gameFrame.addView(view, new FrameLayout.LayoutParams(-1, -1));
         setContentView(gameFrame);
         immersive();
@@ -337,7 +338,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         seedLegacyTouchSettings();
         if (performanceOverlay == null) {
             performanceOverlay = new PerformanceOverlay(this);
-            gameFrame.addView(performanceOverlay, new FrameLayout.LayoutParams(-1, -1));
+            gameFrame.addView(performanceOverlay, new FrameLayout.LayoutParams(0, 0,
+                    android.view.Gravity.TOP | android.view.Gravity.LEFT));
         }
         if (touchOverlay == null) {
             int[] gameIds = {R.string.dmAndroidAttack, R.string.dmAndroidSkill1, R.string.dmAndroidSkill2, R.string.dmAndroidSkill3, R.string.dmAndroidSkill4,
@@ -350,6 +352,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             touchOverlay = new TouchOverlay(this, gameLabels, navLabels);
             performanceOverlay.setBoundsListener(touchOverlay::setMonitorBounds);
             touchOverlay.setSettingsListener((left, right, monitor) -> applyMonitoringSetting(monitor));
+            touchOverlay.setMonitorStyleListener(performanceOverlay::setStyle);
             touchOverlay.setOnApplyWindowInsetsListener((v, insets) -> {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.displayCutout());
                 touchOverlay.setSafeInsets(safe.left, safe.top, safe.right, safe.bottom);
@@ -359,6 +362,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             gameFrame.addView(touchOverlay, new FrameLayout.LayoutParams(-1, -1));
             touchOverlay.requestApplyInsets();
         }
+        performanceOverlay.bringToFront();
         if (!view.getHolder().getSurface().isValid() || view.getWidth() <= 0 || view.getHeight() <= 0) return;
         File ext = getExternalFilesDir(null);
         if (ext == null) { showStartError(getString(R.string.dmAndroidStorage)); return; }
