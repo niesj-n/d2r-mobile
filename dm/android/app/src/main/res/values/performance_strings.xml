@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="performance_monitoring">Performance monitor</string>
+    <string name="performance_title">PERFORMANCE</string>
+    <string name="performance_fps">Presented FPS</string>
+    <string name="performance_frame">Frame</string>
+    <string name="performance_gpu">GPU</string>
+    <string name="performance_scale">3D scale</string>
+    <string name="performance_dimensions">3D target / output</string>
+    <string name="performance_battery">Battery</string>
+</resources>

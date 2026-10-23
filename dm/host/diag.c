@@ -8,6 +8,9 @@
 #include "dm_hud_exp.h"
 #include "dm_elysium.h"
 #include "dm_bossrush.h"
+#ifdef __ANDROID__
+#include "../android/perf_android.h"
+#endif
 #include <TargetConditionals.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -1551,6 +1554,9 @@ void dm_perf_present(double iv) {   // 出图线程每帧调一次（滞后 8 �
     static const char *path; static int init; static unsigned c16, c25, c33, disc; static double sum; static uint64_t t0, f0, cpu0, tstart;
     if (!init) { init = 1; const char *e = getenv("DM_PERF_FILE"); path = e ? (strcmp(e, "0") ? e : NULL) : (DM_PHONE ? "perf.txt" : NULL); t0 = tstart = now_ns(); f0 = dm_nvn_frame_count(); cpu0 = dm_nvn_sub_cpu_ns(); }
     dm_3d_scale_feed(iv);   // 动态 3D 比例的控制器吃同一份上屏间隔（hle_oe.c） | The dynamic 3D scale controller consumes the same present intervals (hle_oe.c)
+#ifdef __ANDROID__
+    if (dm_android_perf_enabled()) dm_android_perf_feed(iv, now_ns());
+#endif
     if (!path) return;
     if (iv < 0) disc++; else if (iv > 0) { sum += iv; if (iv <= 20.8) c16++; else if (iv <= 29.2) c25++; else c33++; }
     uint64_t now = now_ns(); if (now - t0 < 10000000000ull) return;

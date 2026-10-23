@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="performance_monitoring">性能监控</string>
+    <string name="performance_title">性能监控</string>
+    <string name="performance_fps">上屏采样帧率</string>
+    <string name="performance_frame">帧间隔</string>
+    <string name="performance_gpu">GPU 耗时</string>
+    <string name="performance_scale">3D 比例</string>
+    <string name="performance_dimensions">3D 目标 / 输出</string>
+    <string name="performance_battery">电池温度</string>
+</resources>
