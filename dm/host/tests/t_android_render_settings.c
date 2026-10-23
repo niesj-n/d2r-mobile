@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
     dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
     assert(fabsf(dm_custom_render_scale() - .85f) < .0001f);
     for (int i = 0; i < 3; ++i) dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_render_scale_next");
-    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_prev");
+    for (int i = 0; i < 3; ++i) dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_prev");
     atomic_store(&g_pend[K_DYNAMIC], 1);  /* equivalent to tapping the actual Custom checkbox */
     dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
     assert(fabsf(dm_custom_render_scale() - 1.25f) < .0001f);
@@ -85,6 +85,34 @@ int main(int argc, char **argv) {
     file = fopen(path, "w"); assert(file); fputs("render_scale=nan\nrender_dynamic=nan\neco_fps=0\n", file); fclose(file);
     atomic_store(&g_loaded, 0);
     assert(fabsf(dm_custom_render_scale() - .85f) < .0001f && dm_custom_get("render_dynamic") == 0);
+    file = fopen(path, "w"); assert(file); fputs("eco_fps=1\n", file); fclose(file);
+    atomic_store(&g_loaded, 0);
+    assert(dm_fps_setting() == 30);  /* v1 power-saver value */
+    file = fopen(path, "w"); assert(file); fputs("eco_fps=99\n", file); fclose(file);
+    atomic_store(&g_loaded, 0);
+    assert(dm_fps_setting() == 60);  /* invalid values fall back to default */
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_next");
+    dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
+    assert(dm_fps_setting() == 90);
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_next");
+    dm_custom_on_uimsg("OptionsPanelMessage", "CancelChanges", "");
+    assert(dm_fps_setting() == 90);
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_next");
+    dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
+    assert(dm_fps_setting() == 120);
+    atomic_store(&g_loaded, 0);
+    assert(dm_fps_setting() == 120);
+    dm_custom_on_uimsg("OptionsPanelMessage", "ResetToDefaults", "");
+    dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
+    assert(dm_fps_setting() == 60);
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_prev");
+    dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
+    assert(dm_fps_setting() == 45);
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchCustom_eco_fps_prev");
+    dm_custom_on_uimsg("OptionsPanelMessage", "AcceptChanges", "");
+    assert(dm_fps_setting() == 40);
+    atomic_store(&g_loaded, 0);
+    assert(dm_fps_setting() == 40);
     puts("PASS Android Custom settings default, pending/discard, apply, persistence/reload and reset");
     return 0;
 }

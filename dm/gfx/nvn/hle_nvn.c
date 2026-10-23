@@ -1411,7 +1411,7 @@ static void present_cfg(const win_t *o) {
     int scr = mtl_display_hz();
 #if defined(__ANDROID__)
     const char *e = NULL; g_hz = 60; g_hz_auto = 1;
-    if (getenv("DM_PRESENT_HZ")) LOG("[nvn] Android uses the selected 30/60 FPS setting; DM_PRESENT_HZ ignored");
+    if (getenv("DM_PRESENT_HZ")) LOG("[nvn] Android uses the selected FPS setting; DM_PRESENT_HZ ignored");
 #else
     const char *e = getenv("DM_PRESENT_HZ"); g_hz = e ? atoi(e) : 60; g_hz_auto = !e && scr > 0;
 #endif
@@ -1483,7 +1483,7 @@ static void pace_adapt_tick(double screen_hz) {
 }
 static uint64_t present_period(const win_t *o) {
     present_cfg(o);
-    int itv = g_display_mode ? 1 : o->interval > 0 ? o->interval : 1; double hz = g_hz_auto ? present_auto_hz(mtl_display_refresh()) : g_hz;   // 自适应档（见 pace_adapt_tick） | adaptive tier (see pace_adapt_tick)   // 省电模式的 30 帧由显示节拍决定，这里照旧按 60 档（60 / 120 Hz 屏与原先逐字相同） | Power saving 30 fps is determined by display pacing; here the 60 tier is used as before (identical to before on 60 / 120 Hz screens)
+    int itv = g_display_mode ? 1 : o->interval > 0 ? o->interval : 1; double hz = g_hz_auto ? present_auto_hz(mtl_display_refresh()) : g_hz;
     return hz > 0 ? (uint64_t)(itv * 1e9 / hz) : 0;
 }
 int (*g_nvn_loadscreen_up)(void);   // 宿主登记：读取画面此刻是否开着（diag.c 订阅界面消息时填；图形单测里为空 = 不设闸） | host registration: whether the loading screen is up right now (filled in when diag.c subscribes to UI messages; null in graphics unit tests = no gate)

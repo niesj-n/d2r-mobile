@@ -96,7 +96,7 @@ double dm_pace_hz(double screen_hz, double floor_hz) {
 #endif
 }
 __attribute__((weak)) int dm_fps_setting(void){return 60;}
-int mtl_fps_target(void){return dm_fps_setting()==30?30:60;}
+int mtl_fps_target(void){int target=dm_fps_setting();return target==30||target==40||target==45||target==60||target==90||target==120?target:60;}
 int mtl_link_active(void){return 0;}
 int mtl_link_wait_tick(uint64_t timeout){(void)timeout;return 0;}
 int mtl_warm_wait(int timeout){(void)timeout;return 0;}

@@ -78,7 +78,7 @@ static const struct { const char *k, *zh, *en, *es, *mx, *ru, *ko; } k_dm_i18n[]
     { "dmCustomGemPick", "符文与宝石自动拾取（直接进高级仓库）", "Auto-stash runes & gems", "Runas y gemas al alijo", "Runas y gemas al Arcón", "Руны и камни в хранилище", "룬·보석 자동 창고 보관" },
     { "dmCustomStoreBtn", "背包「存放」按钮", "Inventory Deposit button", "Botón Depositar en inventario", "Botón Depositar en inventario", "Кнопка «Внести» в инвентаре", "가방 '보관' 버튼" },
     { "dmCustomEcoFps", "省电模式（30 帧）", "Power saver (30 fps)", "Modo ahorro (30 fps)", "Modo ahorro (30 fps)", "Экономия (30 fps)", "절전 모드 (30 fps)" },
-    { "dmCustomTargetFps", "目标帧率", "Target frame rate", "Fotogramas objetivo", "Fotogramas objetivo", "Целевая частота кадров", "목표 프레임 속도" },
+    { "dmCustomTargetFps", "目标帧率（*实验）", "Target frame rate (*experimental)", "FPS objetivo (*experimental)", "FPS objetivo (*experimental)", "Целевая частота кадров (*экспериментально)", "목표 프레임 속도 (*실험적)" },
     { "dmCustomRenderScale", "3D 渲染比例", "3D render scale", "Escala de renderizado 3D", "Escala de renderizado 3D", "Масштаб 3D-рендеринга", "3D 렌더링 배율" },
     { "dmCustomRenderDynamic", "动态分辨率", "Dynamic resolution", "Resolución dinámica", "Resolución dinámica", "Динамическое разрешение", "동적 해상도" },
     { "dmCustomQ3dSmooth", "流畅优先", "Smoothness first", "Fluidez primero", "Fluidez primero", "Плавность важнее", "부드러움 우선" },

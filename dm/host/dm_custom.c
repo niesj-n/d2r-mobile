@@ -18,6 +18,7 @@
 #include "dm_i18n.h"
 #ifdef __ANDROID__
 #include "dm_render_scale.h"
+#include "dm_fps.h"
 #endif
 #include <stdatomic.h>
 #include <stdint.h>
@@ -117,8 +118,14 @@ static void load_once(void) {
     int v[NK]; for (int i = 0; i < NK; i++) v[i] = k_def[i];
     FILE *f = fopen(p, "r"); char ln[128];
     int lang = -1, voice = -1, merc = -1;
-    while (f && fgets(ln, sizeof ln, f)) { char *eq = strchr(ln, '='); if (!eq) continue; *eq = 0; int i = key_index(ln); if (i > 0 && i != K_RENDER && i != K_DYNAMIC) v[i] = eq[1] != '0';
+    while (f && fgets(ln, sizeof ln, f)) { char *eq = strchr(ln, '='); if (!eq) continue; *eq = 0; int i = key_index(ln); if (i > 0 && i != K_RENDER && i != K_DYNAMIC
 #ifdef __ANDROID__
+        && i != K_ECO
+#endif
+        ) v[i] = eq[1] != '0';
+#ifdef __ANDROID__
+        if (i == K_ECO) { char *end; long x = strtol(eq + 1, &end, 10);
+            if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x <= 5) v[i] = (int)x; }
         if (i == K_RENDER) { char *end; long x = strtol(eq + 1, &end, 10);
             if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x < DM_ANDROID_RENDER_SCALE_COUNT) v[i] = (int)x; }
         if (i == K_DYNAMIC && (eq[1] == '0' || eq[1] == '1') &&
@@ -161,7 +168,13 @@ float dm_custom_render_scale(void) { return dm_android_render_scale_value(dm_cus
 #endif
 int dm_custom_lang_explicit(void) { load_once(); return atomic_load(&g_loaded) ? atomic_load(&g_lang_explicit) : -1; }
 int dm_custom_voice_explicit(void) { load_once(); return atomic_load(&g_loaded) ? atomic_load(&g_voice_explicit) : -1; }
-int dm_fps_setting(void) { return dm_custom_get("eco_fps") ? 30 : 60; }   // 图形层 nvn_mtl.m mtl_fps_target 每帧读（弱符号的强定义） | Read every frame by mtl_fps_target in the graphics layer nvn_mtl.m (strong definition of a weak symbol)
+int dm_fps_setting(void) {
+#ifdef __ANDROID__
+    return dm_android_fps_value(dm_custom_get("eco_fps"));
+#else
+    return dm_custom_get("eco_fps") ? 30 : 60;
+#endif
+}
 static void save(void) {
     char p[1100], t[1120]; if (!file_path(p, sizeof p)) { LOG("【红】自定义设置：存档目录没挂上，没存盘"); return; }
     snprintf(t, sizeof t, "%s.tmp", p); FILE *f = fopen(t, "w"); int ok = f != NULL;
@@ -186,7 +199,7 @@ void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
                     !strcmp(arg, "TouchCustom_eco_fps_next") ? 1 : 0;
         if (direction) { load_once(); int current = atomic_load(&g_pend[K_ECO]);
             if (current < 0) current = atomic_load(&g_val[K_ECO]);
-            int next = direction < 0 ? 1 : 0;   // left 30 FPS, right 60 FPS
+            int next = dm_android_fps_step(current, direction);
             if (next != current) atomic_store(&g_pend[K_ECO], next);
             return; }
     }
@@ -203,7 +216,7 @@ void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
 #endif
             if (i == 0) atomic_store(&g_lang_explicit, pd); if (i == K_VOICE) atomic_store(&g_voice_explicit, pd); if (i == K_MERC) atomic_store(&g_merc_explicit, pd); if (i == 0) LOG("自定义设置：语言 → %s（应用；下次启动生效）", k_lang_name[pd]); else if (i == K_VOICE) LOG("自定义设置：配音 → %s（应用；下次启动生效）", pd ? "English" : "中文");
 #ifdef __ANDROID__
-            else if (i == K_ECO) LOG("自定义设置：目标帧率 → %d FPS（应用）", pd ? 30 : 60);
+            else if (i == K_ECO) LOG("自定义设置：目标帧率 → %d FPS（应用）", dm_android_fps_value(pd));
 #endif
             else if (i != K_RENDER) LOG("自定义设置：%s → %s（应用）", k_keys[i], pd ? "开" : "关"); } }
         if (ch) save(); }
@@ -312,7 +325,7 @@ void dm_custom_ui_pump(unsigned long long root) {
         if (i == K_RENDER || i == K_ECO) { uint64_t value = find_w(sp, i == K_RENDER ? "TouchCustom_render_scale_value" : "TouchCustom_eco_fps_value", 0);
             int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);
             char text[20]; if (i == K_RENDER) snprintf(text, sizeof text, "%.2f×", dm_android_render_scale_value(shown));
-            else snprintf(text, sizeof text, "%d FPS", shown ? 30 : 60);
+            else snprintf(text, sizeof text, "%d FPS%s", dm_android_fps_value(shown), dm_android_fps_value(shown) >= 90 ? "*" : "");
             if (value) selector_text(main_base(), value, text);
             dm_wref_set(&seen[i], find_w(sp, i == K_RENDER ? "TouchCustom_render_scale_next" : "TouchCustom_eco_fps_next", 0)); continue; }
 #endif

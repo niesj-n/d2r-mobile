@@ -76,7 +76,7 @@ dmCustomDropHaptic	高价值物品掉落时震动	Vibrate on valuable drops	Vibr
 dmCustomGemPick	符文与宝石自动拾取（直接进高级仓库）	Auto-stash runes & gems	Runas y gemas al alijo	Runas y gemas al Arcón	Руны и камни в хранилище	룬·보석 자동 창고 보관	自定义页开关
 dmCustomStoreBtn	背包「存放」按钮	Inventory Deposit button	Botón Depositar en inventario		Кнопка «Внести» в инвентаре	가방 '보관' 버튼	自定义页开关
 dmCustomEcoFps	省电模式（30 帧）	Power saver (30 fps)	Modo ahorro (30 fps)		Экономия (30 fps)	절전 모드 (30 fps)	自定义页开关
-dmCustomTargetFps	目标帧率	Target frame rate	Fotogramas objetivo		Целевая частота кадров	목표 프레임 속도	安卓自定义页左右切换30/60 FPS
+dmCustomTargetFps	目标帧率（*实验）	Target frame rate (*experimental)	FPS objetivo (*experimental)		Целевая частота кадров (*экспериментально)	목표 프레임 속도 (*실험적)	安卓自定义页30/40/45/60/90*/120* FPS；星号表示90/120实验性
 dmCustomRenderScale	3D 渲染比例	3D render scale	Escala de renderizado 3D		Масштаб 3D-рендеринга	3D 렌더링 배율	安卓自定义页左右切换固定比例
 dmCustomRenderDynamic	动态分辨率	Dynamic resolution	Resolución dinámica		Динамическое разрешение	동적 해상도	安卓自定义页动态比例开关
 dmCustomQ3dSmooth	流畅优先	Smoothness first	Fluidez primero		Плавность важнее	부드러움 우선	自定义页「3D 画质」单选的第一项（缺省；dm_custom.c 键 q3d=0）

@@ -36,6 +36,15 @@ int main(void) {
         double got = nvn_pace_hz(h[i].scr, h[i].floor); int ok = got > h[i].want - 1e-9 && got < h[i].want + 1e-9;
         printf("%-52s 期望 %7.3f Hz → 真结果 %7.3f Hz %s\n", h[i].why, h[i].want, got, ok ? "✓" : "✗"); fail += !ok; n++;
     }
+    struct { double screen, target, want; } android[] = {
+        {120, 90, 90}, {120, 45, 45}, {120, 120, 120},
+        {60, 90, 60}, {0, 90, 90}, {144, 90, 90},
+        {120, 0, 60}, {120, 121, 60}
+    };
+    for (int i = 0; i < (int)(sizeof android / sizeof *android); ++i) {
+        double got = nvn_pace_capped_hz(android[i].screen, android[i].target);
+        if (got != android[i].want) { printf("Android %.0f/%.0f got %.2f expected %.2f\n", android[i].screen, android[i].target, got, android[i].want); ++fail; }
+    }
     printf("== %d 项，失败 %d ==\n", n, fail);
     return fail != 0;
 }

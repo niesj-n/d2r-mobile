@@ -275,6 +275,7 @@ double mtl_display_refresh(void), dm_pace_hz(double screen_hz, double target_hz)
 static _Atomic float g_s3g_scale;   // > 0：覆盖动态档（scale3d_tick）| > 0: overrides the dynamic level (scale3d_tick)
 #ifdef __ANDROID__
 static _Atomic int g_s3g_reset;
+void dm_android_perf_dimensions(unsigned tw, unsigned th, unsigned ow, unsigned oh) __attribute__((weak));
 #endif
 __attribute__((weak)) double xbg_recent_gpu_ms(void) { return -1; }   // 空的弱定义（不是弱声明）：苹果链接器要求弱引用链接时有定义；Vulkan 后端 / 鸿蒙平台层给强定义 | empty weak definitions (not declarations): Apple's linker needs a weak reference to resolve; the Vulkan backend / HarmonyOS platform give the strong ones
 static int s3g_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_3D_SCALE_GPU"); on = e && *e == '1'; } return on; }
@@ -294,7 +295,7 @@ static void s3g_feed(double iv_ms) {
     double gpu = xbg_recent_gpu_ms();
     int fps = mtl_fps_target();
     double cadence_hz = dm_pace_hz(mtl_display_refresh(), fps);
-    double budget_ms = 1000.0 / (cadence_hz > 0 ? cadence_hz : fps);
+    double budget_ms = 1000.0 / cadence_hz;
     elapsed = 0; samples = 0;
     if (gpu <= 0) { good = bad = 0; return; }
     int old = level;
@@ -398,6 +399,9 @@ static void scale3d_tick(void) {
     LOG("3D 渲染比例 %.2f：3D 目标 %ux%u，输出 %ux%u（帧 %llu）", want, *(uint32_t *)(renderer + 0xee78), *(uint32_t *)(renderer + 0xee7c),
         *(uint32_t *)(renderer + 0xee88), *(uint32_t *)(renderer + 0xee8c), (unsigned long long)dm_nvn_frame_count());
 #ifdef __ANDROID__
+    if (dm_android_perf_dimensions)
+        dm_android_perf_dimensions(*(uint32_t *)(renderer + 0xee78), *(uint32_t *)(renderer + 0xee7c),
+                                   *(uint32_t *)(renderer + 0xee88), *(uint32_t *)(renderer + 0xee8c));
     if (want > 1.0f && (*(uint32_t *)(renderer + 0xee78) <= ow || *(uint32_t *)(renderer + 0xee7c) <= oh))
         LOG("【红】3D 比例 %.2f 请求后目标未超过输出，须核游戏内部尺寸限制", want);
     if (*(uint32_t *)(renderer + 0xee88) != ow || *(uint32_t *)(renderer + 0xee8c) != oh)
