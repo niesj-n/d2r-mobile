@@ -71,20 +71,21 @@ void dm_android_perf_read(uint64_t now_ns, dm_android_perf_snapshot *out) {
     out->valid = 0; out->fps = out->frame_ms = out->gpu_ms = out->scale = -1;
     uint64_t target, output;
     unsigned a, b;
-    do {
+    for (;;) {
         a = atomic_load(&dimensions_seq);
         if (a & 1) continue;
         target = atomic_load(&target_dimensions);
         output = atomic_load(&output_dimensions);
         b = atomic_load(&dimensions_seq);
-    } while (a != b || (a & 1));
+        if (a == b) break;
+    }
     out->target_width = (unsigned)(target >> 32); out->target_height = (unsigned)target;
     out->output_width = (unsigned)(output >> 32); out->output_height = (unsigned)output;
     if (!dm_android_perf_enabled()) return;
     unsigned published;
     uint64_t at;
     int fps, frame, gpu, scale;
-    do {
+    for (;;) {
         a = atomic_load(&publish_seq);
         if (a & 1) continue;
         published = atomic_load(&published_session);
@@ -94,7 +95,8 @@ void dm_android_perf_read(uint64_t now_ns, dm_android_perf_snapshot *out) {
         gpu = atomic_load(&published_gpu_us);
         scale = atomic_load(&published_scale_1000);
         b = atomic_load(&publish_seq);
-    } while (a != b || (a & 1));
+        if (a == b) break;
+    }
     if (!at || published != atomic_load(&session) || now_ns < at || now_ns - at > 2000000000ull || fps < 0) return;
     out->valid = 1;
     out->fps = fps / 100.0;
