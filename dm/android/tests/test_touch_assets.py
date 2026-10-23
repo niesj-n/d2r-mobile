@@ -20,12 +20,14 @@ def load(name):
 
 stage = load('stage_touch_assets')
 strings = load('gen_strings')
+from test_map_goal_assets import fixture as map_goal_fixture
 
 
 class AssetContract(unittest.TestCase):
     def test_complete_payload_and_tamper(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); native = root / 'art'; hud = root / 'hud'; overlay = root / 'overlay'
+            goal = root / 'mapgoal'; map_goal_fixture(goal)
             native.mkdir(); hud.mkdir(); (overlay / 'data').mkdir(parents=True)
             for name in [f'dm_native_skill_{i}.png' for i in range(9)] + ['dm_native_circle.png', 'dm_native_map.png', 'dm_native_menu.png']:
                 (native / name).write_bytes(b'synthetic-art')
@@ -39,16 +41,30 @@ class AssetContract(unittest.TestCase):
                 (overlay / name).write_bytes(b'synthetic-overlay')
             (hud / 'glyph.png').unlink()
             with self.assertRaisesRegex(ValueError, 'missing or unsafe HUD asset'):
-                stage.stage(native, hud, overlay)
+                stage.stage(native, hud, overlay, goal)
             self.assertFalse((overlay / 'touchart').exists())
             (hud / 'glyph.png').write_bytes(b'synthetic-hud')
-            stage.stage(native, hud, overlay)
+            cross = goal / 'cross.png'; saved = cross.read_bytes(); cross.unlink()
+            with self.assertRaisesRegex(ValueError, 'map goal'):
+                stage.stage(native, hud, overlay, goal)
+            self.assertFalse((overlay / 'touchart').exists())
+            cross.write_bytes(saved)
+            stage.stage(native, hud, overlay, goal)
             fingerprint = stage.overlay_contract.source_fingerprint(Path(__file__).resolve().parents[3])
             entries = stage.overlay_contract.verify_manifest(overlay, fingerprint)
             self.assertIn('touchart/dm_native_skill_8.png', entries)
             self.assertIn('hud_v4_ui/glyph.png', entries)
+            self.assertIn('mapgoal/sym_6.png', entries)
+            self.assertIn('mapgoal/label_30_ko.png', entries)
+            self.assertIn('mapgoal/label_0_old.png', entries)
+            self.assertIn('mapgoal/mapgoal.json', entries)
             for i in range(9):
                 self.assertIn(f'hud_v4_ui/sil_dm_native_skill_{i}.png', entries)
+            map_cross = overlay / 'mapgoal/cross.png'; saved_cross = map_cross.read_bytes()
+            map_cross.write_bytes(b'changed')
+            with self.assertRaises(stage.overlay_contract.ContractError):
+                stage.overlay_contract.verify_manifest(overlay, fingerprint)
+            map_cross.write_bytes(saved_cross)
             (overlay / 'touchart/dm_native_skill_8.png').write_bytes(b'changed')
             with self.assertRaises(stage.overlay_contract.ContractError):
                 stage.overlay_contract.verify_manifest(overlay, fingerprint)
