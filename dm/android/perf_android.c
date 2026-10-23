@@ -18,8 +18,14 @@ extern float dm_3d_scale_cur(void);
 
 void dm_android_perf_set_enabled(int enabled) {
     enabled = !!enabled;
-    if (atomic_exchange(&monitoring, enabled) != enabled)
+    if (enabled) {
+        if (atomic_load(&monitoring)) return;
+        /* Advance the session before exposing enabled to the present thread. */
         atomic_fetch_add(&session, 1);
+        atomic_store(&monitoring, 1);
+    } else if (atomic_exchange(&monitoring, 0)) {
+        atomic_fetch_add(&session, 1);
+    }
 }
 
 int dm_android_perf_enabled(void) { return atomic_load(&monitoring); }
