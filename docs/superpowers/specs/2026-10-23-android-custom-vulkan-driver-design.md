@@ -1,0 +1,21 @@
+# Android custom Vulkan driver design (2026-10-23)
+
+## Scope and reviewed sources
+
+This branch adds a user-selected, rootless Vulkan driver for the Android product. The system driver stays the default. It does not download driver packages, alter system drivers, or claim chip compatibility without device tests. Work starts from integrated v2 `76e35d02bd0b6ec5a6e3d2beb4b93187264742b9`; the designated original project is `jhaizhou-ops/d2r-mobile`, reviewed at `e3756f8942b40eba6c851e881828a5b1bda17fd6` for this integration. Its remote HEAD `758f5d41509af5cd38b7eb934bc2334bdb3e3342` is only a review observation, not a source update.
+
+Pinned dependencies: [libadrenotools](https://github.com/bylaws/libadrenotools/tree/8fae8ce254dfc1344527e05301e43f37dea2df80) `8fae8ce254dfc1344527e05301e43f37dea2df80` (BSD-2-Clause), its [liblinkernsbypass](https://github.com/bylaws/liblinkernsbypass/tree/aa3975893d83ef1bc84c321ec60c65fbf1287887) `aa3975893d83ef1bc84c321ec60c65fbf1287887` (BSD-2-Clause), and [volk](https://github.com/zeux/volk/tree/0dc3ce00bf98b9f0b6fe708ca0f7eb74e2830173) `0dc3ce00bf98b9f0b6fe708ca0f7eb74e2830173` (MIT). The first library requires hooks in `ApplicationInfo.nativeLibraryDir`, an app-private driver directory, and extracted native libraries (`useLegacyPackaging=true`).
+
+## Architecture
+
+The current renderer calls about 118 Vulkan entrypoints through a direct `libvulkan.so` link. Merely opening AdrenoTools' unique loader handle leaves those calls on the system driver. Instead, every Vulkan translation unit uses the same Volk global dispatch: `volkInitializeCustom(selected vkGetInstanceProcAddr)` before `vkCreateInstance`, `volkLoadInstance` immediately after creating it, and `volkLoadDevice` immediately after `vkCreateDevice`. Neither the game library nor the engine links `libvulkan`. The system path supplies the system loader's proc address through `dlopen`; the custom path supplies the proc address from `adrenotools_open_libvulkan`. The engine and presenter share one instance and device as before.
+
+The app imports a ZIP chosen through Android's document picker. It accepts only an ARM64 ELF shared-object driver named `vulkan.*.so`, optional simple-name dependency `.so` files, and metadata. It rejects traversal, duplicate names, symlinks, oversized entries/archives, and unsupported ELF class or machine. A staging directory under app-private storage is atomically promoted to a SHA-256 keyed directory. The saved selection is the digest, never an arbitrary filesystem path. A change takes effect after app process restart. The system entry is always available.
+
+Native startup receives the private directory and selected digest. It resolves only the importer-owned path, passes the actual `nativeLibraryDir` and a trailing-slash driver directory to AdrenoTools, then verifies that enumeration loaded the selected driver path. AdrenoTools can silently fall back to the system driver; this must not be reported as custom success. Failure before any Vulkan instance permits an immediate system-loader retry. If a custom instance was created or the hook outcome is uncertain, startup records system as the next choice and requests a clean restart before the game runs. Shader and pipeline caches are segregated by the selected driver's package digest and Vulkan driver identity; a failed custom attempt cannot pollute the system cache.
+
+Android 16 KB compatibility remains a release gate: every packaged ELF must have compatible `PT_LOAD` alignment, and the APK must be checked with the Android SDK's page-size tools. Extracted native hooks are required by the reviewed AdrenoTools API. No game tick, drawing policy, touch behavior, app identity, or save identity changes are part of this feature.
+
+## Verification boundary
+
+Tests exercise ZIP/ELF validation and atomic import, selection persistence, loader choice and fallback decisions, and the production Vulkan startup ordering. NDK builds must show no `DT_NEEDED libvulkan.so` in `libdm.so` and include the three AdrenoTools hook libraries. A controlled fake Vulkan loader supplies known `vkGetInstanceProcAddr` targets so a real instance/device path proves the selected dispatch is used. This establishes integration, not compatibility or performance on an Adreno phone.
