@@ -12,7 +12,7 @@ Approved by the user: arrange remaining work autonomously and parallelize indepe
 
 ## Sequence and verification
 
-- [ ] Rebase/adapt previously reviewed cursor candidate8e36b58 onto the current touch bridge and current235 tests. Preserve Sort physical-DOWN ownership, held gestures, fallback captions and accepted geometry. Run genuine production-queue regressions including tooltip idle/drag/binding/scene cancellation.
+- [x] Rebase/adapt previously reviewed cursor candidate8e36b58 onto the current touch bridge and current235 tests. Preserve Sort physical-DOWN ownership, held gestures, fallback captions and accepted geometry. Production-queue regressions pass; independent SPEC passes, quality review pending.
 - [ ] Rift snapshot/format/layout: exercise inactive, progress, Guardian/waves, overtime, completion/next-tier and stale/hidden states; preserve host seconds and advancement rather than recomputing them in Java. Validate publication threading before implementation.
 - [ ] Map snapshot/coordinates/assets: exercise targets inside/outside map, left/center/right/full map, true-tomb symbols, no targets, actual UI obstructions and missing art. Keep all existing map controls and fog behavior.
 - [ ] Pipeline diagnostics: real-source tests of bounded log formatting/copying and no hot-path I/O; independently inspect privacy, lock ordering and unchanged rendering results. Clearly label diagnosis as not a measured performance fix.
@@ -22,3 +22,24 @@ Approved by the user: arrange remaining work autonomously and parallelize indepe
 - [ ] Record manual validation boundaries: real Rift progression/completion, map targets/tomb symbols, shop/skill tooltip and diagnosis capture remain distinct from offline success. Follow with remaining merchant/stacked-storage drag-ghost work as a separately bounded renderer feature; do not hide that remaining scope.
 
 Deferred by the user: high-FPS power optimization. System-driver artifact experiments stay paused; use the selected purple driver workaround. QQ integration and phone touch injection remain disabled.
+
+## Integration refinements after producer inspection
+
+Rift's plain state belongs to the server. Its actual API is therefore
+`set_active(int)` on the client/lifecycle path, `publish(void)` immediately
+after the server's existing `dm_rift_tick`, and `set_minimap(float[4])` for
+atomic small-map obstruction. JNI reads only the coherent host cache. Never
+call its HUD getter from Java or the controller thread. The Android-only weak
+server hook does not acquire the touch mutex.
+
+Map targets match the original fixed table: quest goals, supported entrances
+and true-tomb symbols. This does not add discovery for every exit/waypoint.
+All 195 original map art files were regenerated and byte-compared with cache.
+Only matching overlay/art material changes require distribution; runtime
+modules and all 6931 imported shader bundles remain reusable.
+
+Integrated sources so far: cursor be579e2, map0f84e30, Rift112ba49,
+lifecycle wiring605a51e. Native route42/24037, hold13/25855, actual frontend
+drag6, NDK touch syntax and actual app Java/resource compilation pass.
+Device Rift/map acceptance remains pending. Merchant/advanced-storage ghost
+replay follows this information/diagnostics package as its own renderer change.
