@@ -286,8 +286,10 @@ static void release_pointer(dm_tc_finger *f) {
 static dm_tc_target quick_circle(int index) {
     float k=dm_tc_scale_for_size(tc.layout.width,tc.layout.height);
     if (index==0) {
-        float r=22*k, gap=10*k;
-        float x=safe_left+margin_left+gap+r, y=safe_top+gap+r;
+        float r=22*k, edge=4*k, gap=10*k;
+        /* The 44dp phone hit target fits in the monitor's 48dp top strip;
+           the smaller bare icon also leaves a visible gap above the panel. */
+        float x=safe_left+margin_left+edge+r, y=safe_top+edge+r;
         float right=tc.layout.width-safe_right-gap;
         if (monitor_right>monitor_left && monitor_bottom>monitor_top &&
             x+r>monitor_left && x-r<monitor_right && y+r>monitor_top && y-r<monitor_bottom) {

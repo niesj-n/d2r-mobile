@@ -838,6 +838,16 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             REQUIRE(queue_sample()==0);
         }
         REQUIRE(map_position_calls==1);
+        /* Default 48dp monitor offset leaves room for a 44dp phone target in
+           the top strip. Tablet scaling falls back beside the panel. */
+        dm_android_touch_obstructions(0,30,48,314,212); REQUIRE(queue_sample()==0);
+        dm_tc_target top_map=quick_circle(0);
+        REQUIRE(top_map.x+top_map.r<=30 || top_map.x-top_map.r>=314 ||
+                top_map.y+top_map.r<=48 || top_map.y-top_map.r>=212);
+        if (n!=4) {
+            REQUIRE(fabsf(top_map.x-(20+(large_margin?96:0)+26))<.001f);
+            REQUIRE(top_map.y==26 && top_map.y+top_map.r==48);
+        } else REQUIRE(top_map.x-top_map.r>=324 && fabsf(top_map.y-top_map.r-48)<.001f);
         REQUIRE(fabsf(b[190]-b[195])>20 && fabsf(b[191]-b[196])>20);
         printf("DETAIL quick_geometry size=%.0fx%.0f above=%d margin96=%d main=%.2f,%.2f quick=%.2f,%.2f;r=%.2f;dy=%.2f\n",
             sizes[n][0],sizes[n][1],above,large_margin,tc.layout.target[DM_TC_MAIN].x,tc.layout.target[DM_TC_MAIN].y,
@@ -852,7 +862,7 @@ static void test_quick_monitor_obstructions_and_cancel(void) {
     /* Actual monitor dimensions in dp, including safe top and its 48dp offset. */
     dm_android_touch_obstructions(14,30,62,314,226); REQUIRE(queue_sample()==0); read_twice(after);
     dm_tc_target q=quick_circle(0);
-    REQUIRE(q.x-q.r>=324 && q.y-q.r==62);
+    REQUIRE(q.x-q.r==24 && q.y-q.r==18 && q.y+q.r==62);
     REQUIRE(!memcmp(before,after,185*sizeof(float))); /* Preserve original controls and ABI. */
     REQUIRE(after[185]==q.x && after[186]==q.y && after[187]==q.r);
     map_full=1;
@@ -868,16 +878,16 @@ static void test_quick_monitor_obstructions_and_cancel(void) {
     REQUIRE(queue_sample()==0 && !quick[0].index);
     dm_android_touch_event(2,0,q.x,q.y); REQUIRE(queue_sample()==0 && action_head==action_tail);
     /* Wide-panel fallback stays below its actual bounds and clear of the stick. */
-    dm_android_touch_obstructions(14,30,62,840,226); REQUIRE(queue_sample()==0);
+    dm_android_touch_obstructions(14,30,54,840,226); REQUIRE(queue_sample()==0);
     q=quick_circle(0);
     REQUIRE(q.y-q.r>=236 && q.x-q.r>=20 && q.x+q.r<=width-24);
     REQUIRE(hypotf(q.x-tc.layout.joy_x,q.y-tc.layout.joy_y)>q.r+tc.layout.joy_radius);
     quick_tap(0,0); REQUIRE(queue_sample()==DM_BTN_MINUS); REQUIRE(queue_sample()==0);
     dm_android_touch_margins(96,0); REQUIRE(queue_sample()==0);
     dm_android_touch_obstructions(14,0,0,0,0); REQUIRE(queue_sample()==0);
-    q=quick_circle(0); REQUIRE(q.x-q.r>=126 && q.y-q.r==24);
+    q=quick_circle(0); REQUIRE(q.x-q.r>=120 && q.y-q.r==18);
     dm_android_touch_obstructions(NAN,NAN,0,INFINITY,10); REQUIRE(queue_sample()==0);
-    q=quick_circle(0); REQUIRE(isfinite(q.x) && isfinite(q.y) && q.y-q.r==10);
+    q=quick_circle(0); REQUIRE(isfinite(q.x) && isfinite(q.y) && q.y-q.r==4);
 }
 
 static void run_case(const char *name, void (*body)(void)) {
