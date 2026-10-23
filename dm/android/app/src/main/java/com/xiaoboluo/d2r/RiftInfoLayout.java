@@ -38,9 +38,27 @@ final class RiftInfoLayout {
         // The original HUD's bottom backing/text extends beyond its menu and
         // belt hit circles. Conservatively reserve that band when it is drawn.
         if (controls[167]!=0) rectangles.add(new Bounds(0,h*.8f,w,h));
-        for (int i=0;i<23;i++) addCircle(circles,controls,4+i*5);
+        float controlScale=controls[4+12*5+2]/60;
+        for (int i=0;i<23;i++) {
+            int offset=4+i*5;
+            float radius=controls[offset+2];
+            if (i<5) {
+                // TouchOverlay.aimFeedback's arrow reaches r+19*k+6dp;
+                // 6 and the 1.25dp rim stroke are deliberately unscaled.
+                // A shifted skill can also carry the offhand disc centred at
+                // (+.74r,-.74r), radius .30r. Glyph/glow are clipped to .82r.
+                // Reserve the entire reachable envelope while idle as well,
+                // so holding or moving a cast never shifts this readout.
+                float arrow=radius+19*controlScale+6;
+                float shiftedBadge=(float)(Math.sqrt(2)*.74+.30)*radius+18*controlScale;
+                radius=Math.max(arrow,shiftedBadge);
+            }
+            addCircle(circles,controls,offset,radius,false);
+        }
         for (int i=0;i<3;i++) addCircle(circles,controls,185+i*5);
-        addCircle(circles,controls,230);
+        // The actual cancel position/radius are already in the idle snapshot.
+        // Holding a skill only changes visible: reserve that circle in advance.
+        addCircle(circles,controls,230,controls[232],true);
         List<Float> xs=new ArrayList<>(), ys=new ArrayList<>();
         xs.add(Math.max(left,Math.min(right-width,28*u)));
         ys.add(Math.max(top,Math.min(bottom-height,150*u)));
@@ -63,7 +81,10 @@ final class RiftInfoLayout {
         return null;
     }
     private static void addCircle(List<float[]> circles,float[] controls,int offset) {
-        if (controls[offset+3]!=0 && controls[offset+2]>0)
-            circles.add(new float[]{controls[offset],controls[offset+1],controls[offset+2]});
+        addCircle(circles,controls,offset,controls[offset+2],false);
+    }
+    private static void addCircle(List<float[]> circles,float[] controls,int offset,float radius,boolean reserve) {
+        if ((controls[offset+3]!=0 || reserve) && controls[offset+2]>0)
+            circles.add(new float[]{controls[offset],controls[offset+1],radius});
     }
 }
