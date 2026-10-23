@@ -18,7 +18,8 @@
 #define dm_android_touch_margins(l,r) ((void)0)
 #endif
 #ifndef DM_ANDROID_TOUCH_ACTIONS_AVAILABLE
-enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3 };
+enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
+       DM_ANDROID_ACTION_ITEM_NAMES=4 };
 #define dm_android_touch_action(action) ((void)(action))
 #endif
 #ifndef DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE
@@ -38,6 +39,7 @@ static unsigned panel_calls;
 static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_calls, map_position_calls;
 static int map_absolute=-1, map_toggles_pending;
 static int observed_idle;
+static int observed_ingame=1, observed_cursor_pending;
 
 #define REQUIRE(expression) do { \
     ++checks; \
@@ -59,7 +61,7 @@ static void unexpected_host_call(const char *name) {
 uint64_t now_ns(void) { return test_clock_ns; }
 uint64_t dm_input_samples(void) { return test_sample; }
 void dm_cursor_clear(void) {}
-int dm_cursor_pending(void) { return 0; }
+int dm_cursor_pending(void) { return observed_cursor_pending; }
 void dm_ui_hand_idle(int idle) { observed_idle=idle; }
 int dm_ui_panel_state(void) { return 0; }
 int dm_hud_stack_msg(const char *act, const char *arg) {
@@ -138,6 +140,7 @@ void dm_uiscreen_set_panel(int panel) {
     REQUIRE(panel==0 || panel==1);
     observed_panel=panel; ++panel_calls;
 }
+int dm_uiscreen_ingame(void) { return observed_ingame; }
 static void fixture(int navigation) {
     memset(&tc, 0, sizeof tc);
     memset(&scene, 0, sizeof scene);
@@ -151,6 +154,7 @@ static void fixture(int navigation) {
     test_clock_ns = UINT64_C(100000000000); test_sample = 0;
     observed_panel=-1; panel_calls=0;
     observed_idle=-1;
+    observed_ingame=1; observed_cursor_pending=0;
     map_full=map_full_calls=map_toggle_calls=map_center_calls=map_position_calls=map_toggles_pending=0;
     map_absolute=-1; map_mode=1;
     dm_tc_set_safe_insets(0, 0); dm_tc_set_edge_bottom(0); dm_tc_set_safe_bottom(0); dm_tc_set_swap_above(0);
@@ -495,7 +499,7 @@ static void test_android_map_actions_and_mode_gate(void) {
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_POSITION);
     queue_sample();
     REQUIRE(map_position_calls==3);
-    dm_android_touch_action(1); dm_android_touch_action(4);
+    dm_android_touch_action(1); dm_android_touch_action(5);
     REQUIRE(queue_sample()==0 && map_position_calls==3);
 
     map_mode=1;
@@ -565,6 +569,53 @@ static void test_android_full_map_preserves_existing_controls(void) {
     REQUIRE(map_full_calls==1 && map_absolute==0);
 }
 
+static void test_android_item_names_default_and_manual(void) {
+    fixture(0); scene.game=1;
+    REQUIRE(queue_sample()==0);
+    test_clock_ns += UINT64_C(1400000000);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    test_clock_ns += UINT64_C(200000000);
+    REQUIRE((queue_sample() & DM_BTN_L)!=0);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    scene.game=0; REQUIRE((queue_sample() & DM_BTN_L)==0);
+    scene.game=1; REQUIRE((queue_sample() & DM_BTN_L)==0);
+    test_clock_ns += UINT64_C(2000000000);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+
+    fixture(0); scene.game=1;
+    dm_android_touch_action(DM_ANDROID_ACTION_ITEM_NAMES);
+    REQUIRE((queue_sample() & DM_BTN_L)!=0);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_ITEM_NAMES);
+    REQUIRE((queue_sample() & DM_BTN_L)!=0);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    test_clock_ns += UINT64_C(2000000000);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+}
+
+static void test_android_default_names_wait_for_map_action(void) {
+    fixture(0); scene.game=1;
+    REQUIRE(queue_sample()==0);
+    test_clock_ns += UINT64_C(1600000000);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_POSITION);
+    REQUIRE(queue_sample()==0 && map_position_calls==1);
+    REQUIRE((queue_sample() & DM_BTN_L)!=0);
+}
+
+static void test_android_default_names_wait_for_loading_and_cursor(void) {
+    fixture(0); scene.game=1; observed_ingame=0;
+    REQUIRE(queue_sample()==0);
+    test_clock_ns += UINT64_C(2000000000);
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    observed_ingame=1;
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    test_clock_ns += UINT64_C(1600000000);
+    observed_cursor_pending=1;
+    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    observed_cursor_pending=0;
+    REQUIRE((queue_sample() & DM_BTN_L)!=0);
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
@@ -594,6 +645,9 @@ int main(void) {
     run_case("android_gameplay_visibility_gate", test_android_gameplay_visibility_gate);
     run_case("android_local_cancel_clears_pending_actions", test_android_local_cancel_clears_pending_actions);
     run_case("android_full_map_preserves_existing_controls", test_android_full_map_preserves_existing_controls);
+    run_case("android_item_names_default_and_manual", test_android_item_names_default_and_manual);
+    run_case("android_default_names_wait_for_map_action", test_android_default_names_wait_for_map_action);
+    run_case("android_default_names_wait_for_loading_and_cursor", test_android_default_names_wait_for_loading_and_cursor);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }

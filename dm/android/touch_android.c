@@ -6,6 +6,7 @@
 /* Queued by the host and applied on the guest sampling thread. */
 extern void dm_ui_map_cycle_position(void);
 #include "../host/dm_hud.h"
+#include "../host/dm_uiscreen.h"
 #include "../host/dm_custom.h"
 #include "../host/dm_world.h"
 #include "../ios/Sources/dm_touch_native_art.h"
@@ -34,6 +35,8 @@ static unsigned head, tail;
 static int action_queue[256];
 static unsigned action_head, action_tail;
 static int action_release;
+static uint64_t labels_ready_at;
+static int labels_done;
 static int ready, focused = 1, cancel, resizing, ui_drag;
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
 static float margin_left, margin_right;
@@ -86,6 +89,7 @@ static void init_locked(void) {
     dm_tc_set_navigation_mode(&tc, 1);
     dm_tc_enable_targets(&tc, dm_tc_nav_mask(nav_pad()));   /* 开局读取期间也是面板态，同样不出圆钮 | loading at game start is panel state too, no buttons either */
     ready = 1;
+    labels_ready_at = 0; labels_done = 0;
 }
 static void cancel_locked(void) {
     dm_tc_cancel_all(&tc);
@@ -95,6 +99,7 @@ static void cancel_locked(void) {
     pulse_epoch = pulse_sample = resume_sample = 0;
     pulse_hold_start = 0;
     action_head = action_tail = 0; action_release = 0;
+    labels_ready_at = 0;
     memset(direct,0,sizeof direct); selected_point=0; stat_next=skill_add_at=0; map_world_pending=0;
     dm_cursor_clear();
 }
@@ -121,7 +126,8 @@ void dm_android_touch_tablet(int tablet) {
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_action(int action) {
-    if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION) return;
+    if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION &&
+        action != DM_ANDROID_ACTION_ITEM_NAMES) return;
     pthread_mutex_lock(&lock);
     if (focused && ready && scene.game && !frontend && !tc.navigation_mode && action_tail-action_head < 256)
         action_queue[action_tail++ % 256] = action;
@@ -378,7 +384,8 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         }
         requests();
     }
-    double now = now_ns()/1e9;
+    uint64_t now_ticks = now_ns();
+    double now = now_ticks/1e9;
     /* 当期iOS：游戏内按住技能连续施放；换绑从技能树长按进入。
        Current iOS: holding a gameplay skill keeps casting; rebinding starts by holding an icon in the skill tree. */
     point_tick(now);
@@ -398,18 +405,33 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     int active = 0; for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active;
     dm_ui_hand_idle(!active && action_head==action_tail && !action_release &&
                     !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
-    if (scene.game && !frontend && !tc.navigation_mode) {
+    int gameplay = scene.game && !frontend && !tc.navigation_mode, dispatched = 0;
+    if (gameplay) {
+        if (!dm_uiscreen_ingame()) labels_ready_at = 0;
+        else if (!labels_ready_at) labels_ready_at = now_ticks;
         if (action_release) action_release = 0; /* One sampled release between key presses. */
         else if (action_head != action_tail) {
+            dispatched = 1;
             int action = action_queue[action_head++ % 256];
             if (action == DM_ANDROID_ACTION_MAP_VISIBILITY) {
                 *buttons |= DM_BTN_MINUS;
                 action_release = 1;
             } else if (action == DM_ANDROID_ACTION_MAP_POSITION) dm_ui_map_cycle_position();
+            else if (action == DM_ANDROID_ACTION_ITEM_NAMES) {
+                *buttons |= DM_BTN_L;
+                action_release = 1;
+                labels_done = 1;
+            }
         }
-    } else { action_head = action_tail = 0; action_release = 0; }
+    } else { action_head = action_tail = 0; action_release = 0; labels_ready_at = 0; }
     *buttons |= tc.buttons;
     for (int i=0;i<DM_TC_MAX_TOUCH;++i) *buttons |= latched[i];
+    if (gameplay && !labels_done && labels_ready_at && now_ticks-labels_ready_at >= UINT64_C(1500000000) &&
+        action_head==action_tail && !action_release && !dispatched && !active && !*buttons &&
+        !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active()) {
+        const char *defaults = getenv("DM_TOUCH_DEFAULTS");
+        if (!defaults || strcmp(defaults,"0")) { *buttons |= DM_BTN_L; action_release = 1; labels_done = 1; }
+    }
     if (!*lx && !*ly) { *lx = tc.lx; *ly = tc.ly; }
     if (!*rx && !*ry) { *rx = tc.rx; *ry = tc.ry; }
     pthread_mutex_unlock(&lock);

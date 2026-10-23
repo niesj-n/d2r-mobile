@@ -32,7 +32,7 @@ import org.json.JSONArray;
 
 /** 透明悬浮触摸层：与游戏Surface同尺寸，不挤占游戏高度。 | Transparent overlay sharing the game Surface bounds without reducing its height. */
 public final class TouchOverlay extends View {
-    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3;
+    public static final int ACTION_MAP_VISIBILITY=2, ACTION_MAP_POSITION=3, ACTION_ITEM_NAMES=4;
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);

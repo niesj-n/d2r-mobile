@@ -66,7 +66,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private PerformanceOverlay performanceOverlay;
     private TouchOverlay.ToolbarButton touchSettingsButton;
     private LinearLayout touchToolbar;
-    private final TouchOverlay.ToolbarButton[] gameplayActions = new TouchOverlay.ToolbarButton[2];
+    private final TouchOverlay.ToolbarButton[] gameplayActions = new TouchOverlay.ToolbarButton[3];
     private int safeToolbarLeft, safeToolbarRight, safeToolbarTop;
     private boolean started;
     private boolean importing;
@@ -361,9 +361,12 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             touchToolbar = new LinearLayout(this);
             touchToolbar.setOrientation(LinearLayout.HORIZONTAL);
             touchToolbar.setGravity(Gravity.CENTER_HORIZONTAL);
-            int[] labels = {R.string.dmAndroidMapVisibilityShort, R.string.dmAndroidMapPositionShort};
-            int[] descriptions = {R.string.dmAndroidMapVisibility, R.string.dmAndroidMapPosition};
-            int[] actions = {TouchOverlay.ACTION_MAP_VISIBILITY, TouchOverlay.ACTION_MAP_POSITION};
+            int[] labels = {R.string.dmAndroidMapVisibilityShort, R.string.dmAndroidMapPositionShort,
+                    R.string.dmAndroidItemNamesShort};
+            int[] descriptions = {R.string.dmAndroidMapVisibility, R.string.dmAndroidMapPosition,
+                    R.string.dmAndroidItemNames};
+            int[] actions = {TouchOverlay.ACTION_MAP_VISIBILITY, TouchOverlay.ACTION_MAP_POSITION,
+                    TouchOverlay.ACTION_ITEM_NAMES};
             for (int i=0; i<gameplayActions.length; i++) {
                 final int action = actions[i];
                 gameplayActions[i] = touchOverlay.toolbarButton(labels[i], descriptions[i], i==0,

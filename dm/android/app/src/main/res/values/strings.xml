@@ -10,5 +10,7 @@
     <string name="dmAndroidTouchSettingsShort">Settings</string>
     <string name="dmAndroidMapVisibility">Show or hide map</string>
     <string name="dmAndroidMapPosition">Move map to left, center, or right</string>
+    <string name="dmAndroidItemNamesShort">Items</string>
+    <string name="dmAndroidItemNames">Show or hide ground item names</string>
     <string name="dmAndroidImportLocation">Import pack: Download/%1$s/android</string>
 </resources>
