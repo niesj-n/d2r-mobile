@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dmAndroidTouchSettings">触控设置</string>
+    <string name="dmAndroidTouchLeftMargin">左侧边距：%1$d dp</string>
+    <string name="dmAndroidTouchRightMargin">右侧边距：%1$d dp</string>
+    <string name="dmAndroidTouchRestore">恢复默认</string>
+    <string name="dmAndroidTouchSaveFailed">触控设置未能保存，请重试。</string>
+    <string name="dmAndroidImportLocation">导入包位置：Download/%1$s/android</string>
+</resources>

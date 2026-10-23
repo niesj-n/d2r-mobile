@@ -28,6 +28,13 @@ static float scale_for(const dm_tc_layout *l) { return dm_tc_scale_for_size(l->w
    Safe area (in iPhone landscape there is a strip on each of the left and right yielded to the Dynamic Island / rounded corners; read as 62 points each on a 17 Pro Max): the whole right-side skill key group and the left stick are translated by the minimum displacement so that they lie entirely inside the safe area,
       with the relative arrangement within the group unchanged. Which side the island is on depends on how the player holds the device, so both sides are inset. Default 0 (Mac host and unit tests do not set it = original layout). */
 static float g_safe_l, g_safe_r, g_safe_b;
+static float g_android_margin_l, g_android_margin_r;
+static int g_android_margins_enabled;
+void dm_tc_set_android_edge_margins(float left, float right) {
+    g_android_margins_enabled = 1;
+    g_android_margin_l = isfinite(left) ? fminf(96, fmaxf(0, left)) : 0;
+    g_android_margin_r = isfinite(right) ? fminf(96, fmaxf(0, right)) : 0;
+}
 void dm_tc_set_safe_bottom(float bottom) { g_safe_b=isfinite(bottom) && bottom>0 ? bottom : 0; }
 /* 屏幕底边归系统的那一条（点）：从这里起手往上划会被系统当成底边手势（iPad 上连着两次就拉出程序坞），而移动恰好是同一处反复起手往上推。
    这一条里起手不当摇杆、松手也不当点地；从上面起手的摇杆拖进来照常持有。只有 iPad 的前端会给非零值，手机恒为 0。
@@ -99,8 +106,33 @@ void dm_tc_layout_make(dm_tc_layout *l, float width, float height) {
     l->joy_radius = 60*k;
     l->joy_x = fmaxf(90*k, g_safe_l + 60*k) + 30*k;
     l->joy_y = l->height - 115*k;
-    l->joy_zone_r = l->width*0.40f; l->joy_zone_t = l->height*0.45f;
-    l->joy_min_x = l->joy_radius + 8*k; l->joy_max_y = l->height - l->joy_radius - 8*k;
+    l->joy_zone_l = 0; l->joy_zone_r = l->width*0.40f; l->joy_zone_t = l->height*0.45f;
+    l->joy_min_x = l->joy_radius + 8*k; l->joy_max_x = l->width;
+    l->joy_max_y = l->height - l->joy_radius - 8*k;
+    if (g_android_margins_enabled && (g_android_margin_l > 0 || g_android_margin_r > 0)) {
+        /* Leave a gap between the joystick and the complete skill fan, even when
+           both requested margins exceed the room on a compact landscape view. */
+        float first = l->swap.x - l->swap.r;
+        for (int i = DM_TC_MAIN; i <= DM_TC_PORTAL; ++i)
+            first = fminf(first, l->target[i].x - l->target[i].r);
+        float left = g_android_margin_l, right = g_android_margin_r;
+        float room = fmaxf(0, first - (l->joy_x + l->joy_radius) - 2.0f);
+        if (left + right > room) {
+            float ratio = room / (left + right);
+            left *= ratio; right *= ratio;
+        }
+        l->joy_x += left;
+        if (left > 0) {
+            l->joy_zone_l = g_safe_l + left;
+            l->joy_min_x = fmaxf(l->joy_min_x + left, g_safe_l + l->joy_radius + left);
+        }
+        for (int i = DM_TC_MAIN; i <= DM_TC_PORTAL; ++i) l->target[i].x -= right;
+        l->swap.x -= right;
+        if (right > 0) l->target[DM_TC_MAP].x -= g_safe_r + right;
+        l->joy_max_x = first - right - l->joy_radius - 2.0f;
+        l->joy_zone_r = fminf(l->joy_zone_r + left, l->joy_max_x);
+        if (l->joy_zone_r < l->joy_zone_l) l->joy_zone_r = l->joy_zone_l;
+    }
 }
 
 int dm_tc_hit(const dm_tc_layout *l, float x, float y) {
@@ -517,7 +549,7 @@ void dm_tc_begin_at(dm_tc_state *s, int slot, float x, float y, double now_s) {
         if (!s->mouse_click_mode) { s->pointer_valid = 1; s->pointer_x = x; s->pointer_y = y; }
     } else if (!s->navigation_mode && hit == DM_TC_NONE && g_edge_b > 0 && x >= 0 && x < s->layout.width*0.43f && y > s->layout.height - g_edge_b) {
         f->target = DM_TC_EDGE;
-    } else if (!s->navigation_mode && !s->joy_block && hit == DM_TC_NONE && s->joy_slot == DM_TC_NONE && x >= 0 && y <= s->layout.height &&
+    } else if (!s->navigation_mode && !s->joy_block && hit == DM_TC_NONE && s->joy_slot == DM_TC_NONE && x >= s->layout.joy_zone_l && y <= s->layout.height &&
         ((x < s->layout.joy_zone_r && y > s->layout.joy_zone_t) ||
          (x < s->layout.width*0.43f && y > s->layout.height*0.25f && s->joy_lost_s > 0 && now_s - s->joy_lost_s <= DM_TC_JOY_RESUME_S && hypotf(x - s->joy_lost_x, y - s->joy_lost_y) <= DM_TC_JOY_GRAB_K * s->layout.joy_radius))) {
         /* 浮动底盘：落在起摇杆区里就起摇杆，底盘圆心 = 落点（贴边时夹回，见布局处），方向与幅度按「手指相对落点」算，按住后拖到多远都照样识别，
@@ -533,7 +565,7 @@ void dm_tc_begin_at(dm_tc_state *s, int slot, float x, float y, double now_s) {
         f->target = DM_TC_JOYSTICK;
         s->joy_slot = slot;
         /* 接续的沿用取消前的圆心，不按新落点重定：触摸被系统反复打断又重来的机器上，每重来一次底盘就跳到手指当前位置，看着像底盘追着手指跑 | a continuation keeps the centre from before the cancel instead of re-centring on the new touch point: on devices where touches are repeatedly interrupted by the system and restarted, the base would jump to the finger's current position on every restart and look as if it were chasing the finger */
-        s->joy_origin_x = resume ? s->joy_lost_ox : fmaxf(x, s->layout.joy_min_x);
+        s->joy_origin_x = resume ? s->joy_lost_ox : fminf(fmaxf(x, s->layout.joy_min_x), s->layout.joy_max_x);
         s->joy_origin_y = resume ? s->joy_lost_oy : fminf(y, s->layout.joy_max_y);
         s->joy_touch_x = resume ? s->joy_lost_tx : x; s->joy_touch_y = resume ? s->joy_lost_ty : y;   /* 接续的沿用取消前的落点，同样不按新落点重定 | a continuation keeps the touch point from before the cancel, likewise not re-centred on the new touch point */
     }

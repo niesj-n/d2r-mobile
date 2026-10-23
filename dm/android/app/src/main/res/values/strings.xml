@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dmAndroidTouchSettings">Touch controls</string>
+    <string name="dmAndroidTouchLeftMargin">Left edge: %1$d dp</string>
+    <string name="dmAndroidTouchRightMargin">Right edge: %1$d dp</string>
+    <string name="dmAndroidTouchRestore">Restore defaults</string>
+    <string name="dmAndroidTouchSaveFailed">Could not save touch settings. Please try again.</string>
+    <string name="dmAndroidImportLocation">Import pack: Download/%1$s/android</string>
+</resources>

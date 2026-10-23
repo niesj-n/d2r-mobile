@@ -6,6 +6,7 @@ extern "C" {
 /* UI线程仅排队；step必须挂在dm_pad_hook游戏采样线程。 | UI only queues; step must run on the guest sampling thread through dm_pad_hook. */
 void dm_android_touch_resize(float width_dp, float height_dp, float left_dp, float right_dp, float bottom_dp);
 void dm_android_touch_tablet(int tablet);
+void dm_android_touch_margins(float left_dp, float right_dp);
 /* phase: 0 down, 1 move, 2 up, 3 cancel; slot: stable 0..15; coordinates in dp. | 阶段：按下/移动/抬起/取消；槽固定0..15；坐标dp。 */
 void dm_android_touch_event(int phase, int slot, float x, float y);
 void dm_android_touch_focus(int active);

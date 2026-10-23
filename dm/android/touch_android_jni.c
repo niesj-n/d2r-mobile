@@ -11,6 +11,10 @@ JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeResize(JNIEnv *
     dm_android_touch_tablet(tablet);
     dm_android_touch_resize(width,height,left,right,bottom);
 }
+JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeMargins(JNIEnv *env, jclass cls, jfloat left, jfloat right) {
+    (void)env; (void)cls;
+    dm_android_touch_margins(left, right);
+}
 JNIEXPORT void JNICALL Java_com_xiaoboluo_d2r_TouchOverlay_nativeLayout(JNIEnv *env, jclass cls, jfloatArray dst) {
     (void)cls;
     if (!dst || (*env)->GetArrayLength(env,dst)<DM_ANDROID_TOUCH_DRAW_FLOATS) return;

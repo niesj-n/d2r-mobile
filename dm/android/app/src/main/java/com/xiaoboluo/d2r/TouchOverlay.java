@@ -33,6 +33,7 @@ import org.json.JSONArray;
 public final class TouchOverlay extends View {
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
+    private static native void nativeMargins(float left, float right);
     private static native void nativeLayout(float[] out);
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -64,6 +65,7 @@ public final class TouchOverlay extends View {
     private final String lifeFormat, manaFormat, levelFormat, cancelLabel;
     private JSONObject hudUi;
     private float safeLeft, safeRight, safeBottom;
+    private int marginLeft, marginRight;
     private boolean running, inputEnabled;
 
     /** labels为本地化表中的15项：12键、摇杆、换组、难度；menuLabels为导航态前五键。 | Pass 15 localized game labels and five navigation labels from the shared string table. */
@@ -81,8 +83,20 @@ public final class TouchOverlay extends View {
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
     public void setSafeInsets(int leftPx, int rightPx, int bottomPx) {
+        if (safeLeft==leftPx/density && safeRight==rightPx/density && safeBottom==bottomPx/density) return;
+        cancelTouches();
         safeLeft=leftPx/density; safeRight=rightPx/density; safeBottom=bottomPx/density;
         resizeNative();
+    }
+    public void setEdgeMargins(int leftDp, int rightDp) {
+        leftDp=Math.max(0,Math.min(TouchMarginSettings.MAX_DP,leftDp));
+        rightDp=Math.max(0,Math.min(TouchMarginSettings.MAX_DP,rightDp));
+        if (marginLeft==leftDp && marginRight==rightDp) return;
+        cancelTouches();
+        marginLeft=leftDp; marginRight=rightDp;
+        nativeMargins(marginLeft,marginRight);
+        resizeNative();
+        drawnValid=false; invalidate();
     }
     /** 仅在libdm加载且guest启动成功后开启；暂停时先取消触点。 | Enable only after libdm loads and the guest starts; disabling cancels first. */
     public void setInputEnabled(boolean enabled) {

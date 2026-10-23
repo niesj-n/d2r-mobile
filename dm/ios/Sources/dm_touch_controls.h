@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#define DM_ANDROID_TOUCH_MARGINS_AVAILABLE 1
 enum { DM_TC_MAX_TOUCH = 16, DM_TC_COUNT = 12 };
 enum {
     DM_TC_NONE = -1, DM_TC_JOYSTICK = -2, DM_TC_SWAP = -3, DM_TC_DIFF = -4,   /* DIFF：难度格 / 选择条占用的手指，不发按键 | DIFF: a finger captured by the difficulty cell / selector bar; sends no key */
@@ -20,7 +21,7 @@ typedef struct {
     int tablet, swap_above;   // 已生效的布局配置，绘制和命中判定共用 | Applied layout profile; mirrors drawing and hit testing.
     dm_tc_target target[DM_TC_COUNT];
     float joy_x, joy_y, joy_radius;   /* 没按时底盘的显示位置（静止位）与底盘半径 | where the base is shown while not pressed (rest position), and the base radius */
-    float joy_zone_r, joy_zone_t, joy_min_x, joy_max_y;   /* 起摇杆区的右界与上界（左与下到屏幕边）；按下后底盘圆心的夹回界：x 不小于、y 不大于（只为底盘整圈画在屏内：屏幕边 + 半径 + 8） | right and upper bounds of the stick-start zone (left and bottom reach the screen edges); clamp bounds for the base centre once pressed: x not less than, y not greater than (only so that the whole base is drawn on screen: screen edge + radius + 8) */
+    float joy_zone_l, joy_zone_r, joy_zone_t, joy_min_x, joy_max_x, joy_max_y;   /* 起摇杆区的右界与上界（左与下到屏幕边）；按下后底盘圆心的夹回界：x 不小于、y 不大于（只为底盘整圈画在屏内：屏幕边 + 半径 + 8） | right and upper bounds of the stick-start zone (left and bottom reach the screen edges); clamp bounds for the base centre once pressed: x not less than, y not greater than (only so that the whole base is drawn on screen: screen edge + radius + 8) */
     dm_tc_target swap;   /* 技能组切换键：本地开关，不直接发按键 | Skill set switch key: a local toggle; does not send a key directly */
     dm_tc_target diff;   /* 底部 UI v4 第 0 格难度：点开 / 收起 1–8 选择条，不发按键 | Bottom UI v4 cell 0 difficulty: tap to open / collapse the 1–8 selector bar; sends no key */
     dm_tc_target pick[8];   /* 选择条 8 格（第 i 格 = 人数档 i+1），在七格上方 | The selector bar's 8 cells (cell i = player-count level i+1), above the seven cells */
@@ -145,6 +146,8 @@ int dm_tc_panel_mode(int nav, const dm_tc_scene *scene, int blocked);
 /* 坐标使用 UIKit 点；布局本身不画球、不声称游戏已绑定回城/腰带。 | Coordinates use UIKit points; the layout itself does not draw the orbs and does not claim the game has bound town portal/belt. */
 /* 安全区左右内缩（点）；在 init / resize 之前设，之后的布局按它把右侧技能键组与左摇杆移进安全区。缺省 0。 | Left/right safe-area insets (points); set before init / resize, and the layout afterwards uses them to move the right-side skill key group and the left stick into the safe area. Default 0. */
 void dm_tc_set_safe_insets(float left, float right);
+/* Android only; zero by default, so iOS/Mac retain their original geometry. */
+void dm_tc_set_android_edge_margins(float left, float right);
 void dm_tc_set_edge_bottom(float bottom);   /* 屏幕底边归系统的那一条的高度（点）；0 = 没有。只约束移动摇杆的起手 | Height (points) of the strip along the bottom edge of the screen that belongs to the system; 0 = none. Constrains only where the movement stick may start */
 void dm_tc_layout_make(dm_tc_layout *layout, float width, float height);
 int dm_tc_hit(const dm_tc_layout *layout, float x, float y);

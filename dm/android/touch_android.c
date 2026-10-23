@@ -30,6 +30,7 @@ static touch_event queue[256];
 static unsigned head, tail;
 static int ready, focused = 1, cancel, resizing, ui_drag;
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
+static float margin_left, margin_right;
 static int tablet_layout, swap_above;
 typedef struct { int kind; float x,y; double time; uint64_t key; } direct_gesture;
 static direct_gesture direct[DM_TC_MAX_TOUCH];
@@ -95,6 +96,16 @@ void dm_android_touch_resize(float w, float h, float l, float r, float b) {
     pthread_mutex_lock(&lock);
     width = w; height = h; safe_left = fmaxf(0,l); safe_right = fmaxf(0,r); safe_bottom = fmaxf(0,b);
     resizing = cancel = 1; head = tail = 0;
+    pthread_mutex_unlock(&lock);
+}
+void dm_android_touch_margins(float left_dp, float right_dp) {
+    left_dp = isfinite(left_dp) ? fminf(96, fmaxf(0, left_dp)) : 0;
+    right_dp = isfinite(right_dp) ? fminf(96, fmaxf(0, right_dp)) : 0;
+    pthread_mutex_lock(&lock);
+    if (margin_left != left_dp || margin_right != right_dp) {
+        margin_left = left_dp; margin_right = right_dp;
+        resizing = cancel = 1; head = tail = 0;
+    }
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_tablet(int tablet) {
@@ -255,6 +266,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     if (cancel) { cancel_locked(); cancel = 0; }
     if (resizing) {
         dm_tc_set_tall_scale(tablet_layout); dm_tc_set_swap_above(swap_above);
+        dm_tc_set_android_edge_margins(margin_left, margin_right);
         dm_tc_set_safe_insets(safe_left,safe_right); dm_tc_set_edge_bottom(safe_bottom); dm_tc_set_safe_bottom(safe_bottom);
         dm_ui_safe_left((int)lroundf(safe_left * 2160 / height));
         dm_ui_safe_right((int)lroundf(safe_right * 2160 / height));

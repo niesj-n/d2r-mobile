@@ -13,8 +13,12 @@
 
 #include "dm/android/touch_android.c"
 #include "dm/ios/Sources/dm_touch_controls.c"
+#ifndef DM_ANDROID_TOUCH_MARGINS_AVAILABLE
+#define dm_tc_set_android_edge_margins(l,r) ((void)0)
+#define dm_android_touch_margins(l,r) ((void)0)
+#endif
 
-_Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 183, "Review the Java/native ABI before changing this test");
+_Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 185, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
 static const char *case_name = "startup";
 static unsigned checks, cases;
@@ -45,6 +49,11 @@ void dm_cursor_clear(void) {}
 int dm_cursor_pending(void) { return 0; }
 void dm_ui_hand_idle(int idle) { (void)idle; }
 int dm_ui_panel_state(void) { return 0; }
+int dm_hud_stack_msg(const char *act, const char *arg) {
+    if (!strcmp(act, "OpenPanel") && !strcmp(arg, "PlayerInventoryExpansionLayout")) return 1;
+    if (!strcmp(act, "OpenPanel") && !strcmp(arg, "NpcDialogPanel")) return -1;
+    return 0;
+}
 int dm_ui_tap_box(void) { return 0; }
 uint32_t dm_ui_cur_stack_id(void) { return 0; }
 uint32_t dm_ui_hover_unid(void) { return 0; }
@@ -119,6 +128,7 @@ static void fixture(int navigation) {
     test_clock_ns = UINT64_C(100000000000); test_sample = 0;
     observed_panel=-1; panel_calls=0;
     dm_tc_set_safe_insets(0, 0); dm_tc_set_edge_bottom(0); dm_tc_set_safe_bottom(0); dm_tc_set_swap_above(0);
+    dm_tc_set_android_edge_margins(0, 0);
     dm_tc_set_panel_state(0); dm_tc_set_tap_box(0); dm_tc_set_cur_stack(0); dm_tc_set_hover_unid(0);
     init_locked();
     dm_tc_set_navigation_mode(&tc, navigation);
@@ -364,13 +374,89 @@ static void test_android_panel_observation(void) {
     REQUIRE(tc.navigation_mode==0 && observed_panel==0 && panel_calls==5);
 }
 
+
+static void test_independent_android_margins(void) {
+    fixture(0);
+    dm_tc_target main0=tc.layout.target[DM_TC_MAIN];
+    float joy0=tc.layout.joy_x;
+    dm_android_touch_margins(48,0); queue_sample();
+    REQUIRE(tc.layout.joy_x>joy0+47 && tc.layout.joy_x<joy0+49);
+    REQUIRE(tc.layout.target[DM_TC_MAIN].r==main0.r);
+    REQUIRE(tc.layout.target[DM_TC_MAIN].x==main0.x);
+    dm_tc_begin_at(&tc, 0, 4, tc.layout.height-40, 101.0);
+    REQUIRE(tc.finger[0].target!=DM_TC_JOYSTICK);
+    dm_tc_cancel_all(&tc);
+    dm_tc_begin_at(&tc, 0, tc.layout.joy_x, tc.layout.joy_y, 102.0);
+    REQUIRE(tc.finger[0].target==DM_TC_JOYSTICK);
+    dm_tc_cancel_all(&tc);
+    dm_android_touch_margins(0,48); queue_sample();
+    REQUIRE(tc.layout.joy_x==joy0);
+    REQUIRE(tc.layout.target[DM_TC_MAIN].x<main0.x-47 && tc.layout.target[DM_TC_MAIN].x>main0.x-49);
+    REQUIRE(tc.layout.target[DM_TC_MAIN].r==main0.r);
+    dm_android_touch_margins(0,0); queue_sample();
+    REQUIRE(tc.layout.joy_x==joy0 && tc.layout.target[DM_TC_MAIN].x==main0.x);
+}
+
+static void test_zero_margin_keeps_original_layout(void) {
+    dm_tc_layout before, after;
+    dm_tc_set_safe_insets(18,16);
+    dm_tc_layout_make(&before,800,375);
+    dm_tc_set_android_edge_margins(0,0);
+    dm_tc_layout_make(&after,800,375);
+    REQUIRE(memcmp(&before,&after,sizeof before)==0);
+}
+
+static void test_margins_share_draw_and_hit_geometry(void) {
+    fixture(0);
+    dm_android_touch_margins(28,44); queue_sample();
+    float draw[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(draw);
+    dm_tc_target main=tc.layout.target[DM_TC_MAIN];
+    REQUIRE(draw[field(DM_TC_MAIN,0)]==main.x);
+    REQUIRE(draw[field(DM_TC_MAIN,1)]==main.y);
+    REQUIRE(dm_tc_hit(&tc.layout,main.x,main.y)==DM_TC_MAIN);
+    dm_android_touch_event(0,0,main.x,main.y);
+    REQUIRE((queue_sample()&DM_BTN_A)!=0);
+    REQUIRE(tc.finger[0].target==DM_TC_MAIN);
+}
+
+static void test_safe_insets_and_tiny_margins(void) {
+    fixture(0);
+    dm_android_touch_resize(280,180,18,16,0);
+    dm_android_touch_margins(96,96); queue_sample();
+    float draw[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(draw);
+    float left_end=tc.layout.joy_x+tc.layout.joy_radius;
+    float right_begin=tc.layout.width;
+    REQUIRE(tc.layout.joy_x-tc.layout.joy_radius>=18);
+    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;i++) {
+        dm_tc_target t=tc.layout.target[i];
+        REQUIRE(t.x-t.r>=0 && t.x+t.r<=tc.layout.width);
+        REQUIRE(t.y-t.r>=0 && t.y+t.r<=tc.layout.height);
+        if(t.x-t.r<right_begin) right_begin=t.x-t.r;
+    }
+    REQUIRE(left_end+2<=right_begin);
+    REQUIRE(tc.layout.target[DM_TC_MAIN].x+tc.layout.target[DM_TC_MAIN].r<=tc.layout.width-16);
+    REQUIRE(draw[field(DRAW_JOY,0)]==tc.layout.joy_x);
+}
+
+static void test_margin_relayout_cancels_touch(void) {
+    fixture(0);
+    dm_tc_target main=tc.layout.target[DM_TC_MAIN];
+    dm_android_touch_event(0,0,main.x,main.y);
+    REQUIRE((queue_sample()&DM_BTN_A)!=0);
+    dm_android_touch_event(0,1,main.x,main.y);
+    dm_android_touch_margins(0,32);
+    REQUIRE(queue_sample()==0);
+    REQUIRE(head==tail && tc.buttons==0 && !tc.finger[0].active);
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
 
 int main(void) {
     puts("SCOPE native_layout_and_input_bridge; no_Java_Canvas_no_guest_no_save_access");
-    run_case("idle_183_abi", test_idle_and_abi);
+    run_case("zero_margin_keeps_original_layout", test_zero_margin_keeps_original_layout);
+    run_case("idle_185_abi", test_idle_and_abi);
     run_case("press_release_multitouch", test_press_release_and_multitouch);
     run_case("slide_cancelled_finger", test_slide_cancel);
     run_case("release_pulse_highlight", test_release_pulse);
@@ -383,6 +469,10 @@ int main(void) {
     run_case("android_cancelled_latch", test_android_cancelled_latch);
     run_case("android_swap_release_cancel", test_android_swap_release_cancel);
     run_case("android_panel_observation", test_android_panel_observation);
+    run_case("independent_android_margins", test_independent_android_margins);
+    run_case("margins_share_draw_and_hit_geometry", test_margins_share_draw_and_hit_geometry);
+    run_case("safe_insets_and_tiny_margins", test_safe_insets_and_tiny_margins);
+    run_case("margin_relayout_cancels_touch", test_margin_relayout_cancels_touch);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }

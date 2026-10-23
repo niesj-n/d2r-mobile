@@ -6,6 +6,7 @@ package com.xiaoboluo.d2r;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.net.Uri;
 import android.hardware.display.DisplayManager;
@@ -24,12 +25,17 @@ import android.view.inputmethod.BaseInputConnection;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.Gravity;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
+import android.widget.Toast;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -52,10 +58,12 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private static WeakReference<DmActivity> current = new WeakReference<>(null);
     private static volatile int bootFailure;
     private AlertDialog inputDialog;
+    private AlertDialog touchSettingsDialog;
 
     private SurfaceView view;
     private FrameLayout gameFrame;
     private TouchOverlay touchOverlay;
+    private ImageButton touchSettingsButton;
     private boolean started;
     private boolean importing;
     private boolean libraryLoaded;
@@ -111,6 +119,74 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     // Done before the native library loads: in the release APK without game content, a few tables are read from derived.tsv at load time.
     private static final String[] IMPORT_ITEMS = {"out", "shaders", "overlay", "derived.tsv", "pack_info.txt"};
 
+    private String importMessage(int resource) {
+        return getString(resource).replace("Download/S2X/D2R Mobile/",
+                "Download/" + BuildConfig.DM_IMPORT_DIRECTORY + "/");
+    }
+
+    private String importLocation() {
+        return getString(R.string.dmAndroidImportLocation, BuildConfig.DM_IMPORT_DIRECTORY);
+    }
+
+    private TouchMarginSettings.Store touchMarginStore() {
+        SharedPreferences prefs = getSharedPreferences("touch_margins", MODE_PRIVATE);
+        return new TouchMarginSettings.Store() {
+            public int get(String key) { return prefs.getInt(key, 0); }
+            public boolean put(int left, int right) {
+                return prefs.edit().putInt("left", left).putInt("right", right).commit();
+            }
+        };
+    }
+
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private void saveTouchMargins(int left, int right) {
+        if (!TouchMarginSettings.save(touchMarginStore(), left, right)) {
+            Toast.makeText(this, R.string.dmAndroidTouchSaveFailed, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (touchOverlay != null) touchOverlay.setEdgeMargins(left, right);
+    }
+
+    private void showTouchSettings() {
+        if (!resumed || isFinishing() || isDestroyed() || inputDialog != null || touchSettingsDialog != null) return;
+        releaseTouches();
+        TouchMarginSettings.Values saved = TouchMarginSettings.load(touchMarginStore());
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(24), dp(12), dp(24), dp(12));
+        TextView leftText = new TextView(this), rightText = new TextView(this);
+        SeekBar left = new SeekBar(this), right = new SeekBar(this);
+        left.setMax(TouchMarginSettings.MAX_DP); right.setMax(TouchMarginSettings.MAX_DP);
+        left.setProgress(saved.left); right.setProgress(saved.right);
+        leftText.setText(getString(R.string.dmAndroidTouchLeftMargin, saved.left));
+        rightText.setText(getString(R.string.dmAndroidTouchRightMargin, saved.right));
+        left.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar bar, int progress, boolean user) { leftText.setText(getString(R.string.dmAndroidTouchLeftMargin, progress)); }
+            public void onStartTrackingTouch(SeekBar bar) {}
+            public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        right.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar bar, int progress, boolean user) { rightText.setText(getString(R.string.dmAndroidTouchRightMargin, progress)); }
+            public void onStartTrackingTouch(SeekBar bar) {}
+            public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        controls.addView(leftText); controls.addView(left);
+        controls.addView(rightText); controls.addView(right);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(R.string.dmAndroidTouchSettings).setView(controls)
+            .setPositiveButton(R.string.dmConfirm, (d, which) -> saveTouchMargins(left.getProgress(), right.getProgress()))
+            .setNeutralButton(R.string.dmAndroidTouchRestore, (d, which) -> saveTouchMargins(0, 0))
+            .setNegativeButton(R.string.dmCancel, (d, which) -> {})
+            .create();
+        touchSettingsDialog = dialog;
+        dialog.setOnDismissListener(d -> {
+            if (touchSettingsDialog == dialog) touchSettingsDialog = null;
+            if (resumed) immersive();
+        });
+        dialog.show();
+    }
+
     private static String readText(File f) {
         try { return new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8); } catch (IOException e) { return null; }
     }
@@ -128,7 +204,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         String want = readText(new File(source, "pack_info.txt")), have = readText(new File(runtime, "pack_info.txt"));
         if (want != null && !want.equals(have)) {
             String product = packProduct(want);
-            if (!BuildConfig.DM_PRODUCT.equals(product)) { showStartError(getString(R.string.dmAndroidImportVersion, product)); return false; }
+            if (!BuildConfig.DM_PRODUCT.equals(product)) { showStartError(getString(R.string.dmAndroidImportVersion, product) + "\n" + importLocation()); return false; }
             importing = true;
             TextView t = new TextView(this);
             t.setTextSize(20); t.setPadding(64, 64, 64, 64); t.setText(getString(R.string.dmAndroidImporting, 0));
@@ -140,7 +216,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
                 String failure = error;
                 runOnUiThread(() -> {
                     importing = false;
-                    if (failure != null) showStartError(getString(R.string.dmAndroidImportFailed, failure));
+                    if (failure != null) showStartError(getString(R.string.dmAndroidImportFailed, failure) + "\n" + importLocation());
                     else startHost();
                 });
             }, "dm-import").start();
@@ -150,7 +226,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         // The imported pack was made for another version (the app was updated, the pack was not remade): it has to be remade too.
         // Files pushed directly during development have no pack_info.txt and are not checked
         String product = packProduct(have);
-        if (have != null && !BuildConfig.DM_PRODUCT.equals(product)) { showStartError(getString(R.string.dmAndroidImportVersion, product)); return false; }
+        if (have != null && !BuildConfig.DM_PRODUCT.equals(product)) { showStartError(getString(R.string.dmAndroidImportVersion, product) + "\n" + importLocation()); return false; }
         return true;
     }
 
@@ -212,7 +288,7 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         if (bootFailure != 0) { showBootFailure(); return; }
         if (started || importing || !resumed || !ensureFileAccess()) return;
         File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        if (!libraryLoaded && !ensureImported(new File(downloads, "S2X/D2R Mobile/android"))) return;
+        if (!libraryLoaded && !ensureImported(new File(downloads, BuildConfig.DM_IMPORT_DIRECTORY + "/android"))) return;
         if (gameFrame.getParent() == null) setContentView(gameFrame);
         if (!libraryLoaded) {
             // 与 jni_android.c 选运行目录同一条规则：内部目录有主程序就用内部目录，否则用外部私有目录
@@ -232,12 +308,28 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             for (int i = 0; i < gameIds.length; i++) gameLabels[i] = getString(gameIds[i]);
             for (int i = 0; i < navIds.length; i++) navLabels[i] = getString(navIds[i]);
             touchOverlay = new TouchOverlay(this, gameLabels, navLabels);
+            TouchMarginSettings.Values margins = TouchMarginSettings.load(touchMarginStore());
+            touchOverlay.setEdgeMargins(margins.left, margins.right);
             touchOverlay.setOnApplyWindowInsetsListener((v, insets) -> {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.displayCutout());
                 touchOverlay.setSafeInsets(safe.left, safe.right, safe.bottom);
+                if (touchSettingsButton != null) {
+                    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) touchSettingsButton.getLayoutParams();
+                    int top = safe.top + dp(8);
+                    if (params.topMargin != top) { params.topMargin = top; touchSettingsButton.setLayoutParams(params); }
+                }
                 return insets;
             });
             gameFrame.addView(touchOverlay, new FrameLayout.LayoutParams(-1, -1));
+            touchSettingsButton = new ImageButton(this);
+            touchSettingsButton.setImageResource(android.R.drawable.ic_menu_preferences);
+            touchSettingsButton.setContentDescription(getString(R.string.dmAndroidTouchSettings));
+            touchSettingsButton.setBackgroundColor(0x88302b25);
+            touchSettingsButton.setAlpha(0.8f);
+            touchSettingsButton.setOnClickListener(v -> showTouchSettings());
+            FrameLayout.LayoutParams settingsPlacement = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            settingsPlacement.topMargin = dp(8);
+            gameFrame.addView(touchSettingsButton, settingsPlacement);
             touchOverlay.requestApplyInsets();
         }
         if (!view.getHolder().getSurface().isValid() || view.getWidth() <= 0 || view.getHeight() <= 0) return;
@@ -264,7 +356,8 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
                 case -10 -> R.string.dmAndroidInvalidOverlay;
                 default -> 0;
             };
-            showStartError(resource == 0 ? getString(R.string.dmAndroidStartFailed, result) : getString(resource)); return;
+            showStartError(resource == 0 ? getString(R.string.dmAndroidStartFailed, result)
+                    : result == -2 || result == -5 ? getString(resource) : importMessage(resource)); return;
         }
         started = true;
         touchOverlay.setInputEnabled(true);
@@ -390,10 +483,10 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     @Override public void onDisplayRemoved(int id) { updateRefresh(); }
     @Override public void onDisplayChanged(int id) { updateRefresh(); }
     @Override protected void onResume() { super.onResume(); resumed = true; immersive(); startHost(); updateRefresh(); if (started) { nativeFocus(3); if (touchOverlay != null && bootFailure == 0) touchOverlay.setInputEnabled(true); } }
-    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); releaseTouches(); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
+    @Override protected void onPause() { resumed = false; if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); releaseTouches(); if (touchOverlay != null) touchOverlay.setInputEnabled(false); if (started) nativeFocus(0); super.onPause(); }
     @Override protected void onStart() { super.onStart(); if (started) nativeFocus(2); }
     @Override protected void onStop() { if (started) nativeFocus(1); com.xiaoboluo.d2r.widget.HeroWidgetProvider.requestUpdate(this); super.onStop(); }
-    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
+    @Override protected void onDestroy() { if (displays != null) displays.unregisterDisplayListener(this); if (inputDialog != null) inputDialog.dismiss(); if (touchSettingsDialog != null) touchSettingsDialog.dismiss(); if (current.get() == this) current.clear(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); else releaseTouches(); }
 
     @Override public void surfaceCreated(SurfaceHolder h) {}
