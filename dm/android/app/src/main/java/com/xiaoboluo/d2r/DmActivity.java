@@ -151,8 +151,16 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             performanceOverlay.setMonitoringEnabled(started && resumed && bootFailure == 0 && enabled);
     }
 
+    private static void showNativeDriverSettings() {
+        DmActivity activity = current.get();
+        if (activity != null) activity.runOnUiThread(() -> {
+            if (!activity.isDestroyed()) activity.showDriverSettings();
+        });
+    }
+
     private void showDriverSettings() {
-        if (!resumed || isFinishing() || isDestroyed() || driverSettingsDialog != null) return;
+        if (!resumed || isFinishing() || isDestroyed() || inputDialog != null || driverSettingsDialog != null) return;
+        releaseTouches();
         File files = getFilesDir();
         List<DriverPackageStore.DriverInfo> installed = DriverPackageStore.list(files);
         DriverPackageStore.DriverInfo chosen = DriverPackageStore.selected(files);

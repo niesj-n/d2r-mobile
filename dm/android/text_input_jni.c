@@ -8,7 +8,7 @@
 
 static JavaVM *vm;
 static jclass activity_class;
-static jmethodID show_input, report_failure;
+static jmethodID show_input, report_failure, show_driver_settings;
 static pthread_mutex_t input_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t input_done = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t work_ready = PTHREAD_COND_INITIALIZER;
@@ -19,7 +19,7 @@ typedef struct input_job {
     struct input_job *next;
     jlong id;
     char *strings[4];
-    int max_chars, name_rule, numeric_max, failure_code;
+    int max_chars, name_rule, numeric_max, failure_code, driver_settings;
 } input_job;
 static input_job *jobs_head, *jobs_tail;
 
@@ -82,7 +82,9 @@ static void *input_worker(void *unused) {
         pthread_mutex_unlock(&input_lock);
         // 不持锁调用 Java：无 Activity 时 Java 会同步回调取消，持锁会死锁。
         // Never call Java while locked: the no-Activity path cancels synchronously.
-        if (!job->id) {
+        if (job->driver_settings) {
+            (*env)->CallStaticVoidMethod(env, activity_class, show_driver_settings);
+        } else if (!job->id) {
             (*env)->CallStaticVoidMethod(env, activity_class, report_failure, job->failure_code);
         } else {
             jstring strings[4] = {0};
@@ -116,12 +118,25 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *java_vm, void *reserved) {
     show_input = (*env)->GetStaticMethodID(env, activity_class, "showNativeInput",
         "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;III)V");
     report_failure = (*env)->GetStaticMethodID(env, activity_class, "showNativeFailure", "(I)V");
-    if (!show_input || !report_failure) return JNI_ERR;
+    show_driver_settings = (*env)->GetStaticMethodID(env, activity_class, "showNativeDriverSettings", "()V");
+    if (!show_input || !report_failure || !show_driver_settings) return JNI_ERR;
     vm = java_vm;
     pthread_t worker;
     if (pthread_create(&worker, NULL, input_worker, NULL)) worker_state = -1;
     else pthread_detach(worker);
     return JNI_VERSION_1_6;
+}
+
+/* Guest callbacks enqueue here; only the original-stack worker may enter ART. */
+void dm_android_driver_settings_request(void) {
+    input_job *job = calloc(1, sizeof *job);
+    if (!job) return;
+    job->driver_settings = 1;
+    pthread_mutex_lock(&input_lock);
+    while (!worker_state) pthread_cond_wait(&input_done, &input_lock);
+    if (worker_state > 0) { enqueue(job); job = NULL; }
+    pthread_mutex_unlock(&input_lock);
+    if (job) free_job(job);
 }
 
 void front_android_boot_failed(int code) {

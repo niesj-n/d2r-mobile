@@ -4,13 +4,19 @@
 
 **Goal:** Replace the added Android toolbar with real game widgets and move screen-edge margins into the game's Custom settings page.
 
-**Baseline:** `bf7b046f0e59ec4b25a4c5e54a0b836aca905f7c`, original upstream `jhaizhou-ops/d2r-mobile` reviewed at `e3756f8942b40eba6c851e881828a5b1bda17fd6`. Keep third-party drivers on their independent next-version branch.
+**Baseline:** `bf7b046f0e59ec4b25a4c5e54a0b836aca905f7c`, original upstream `jhaizhou-ops/d2r-mobile` reviewed at `e3756f8942b40eba6c851e881828a5b1bda17fd6`. Bring the reviewed third-party driver module into this package at the user's later explicit request.
+
+## Accepted user revisions
+
+- Game UI only gains panel Sort and Custom touch settings. Map visibility/position and item names remain in the existing touch-button layer, attached to the skill cluster; do not add a new HUD widget strip.
+- User explicitly kept the monitor toggle in Custom.
+- User explicitly requested third-party drivers in this same APK for joint manual validation. Integrate the previously reviewed driver branch and provide a native Custom driver-management button, using the existing dedicated JNI worker to open the Android document/selection UI.
 
 ## Design
 
-- Map visibility, left/center/right position, and item-name controls become game-rendered HUD widgets, using existing game button assets and localized labels. They disappear with the HUD or modal panels.
+- Map visibility, left/center/right position, and item names use the original circle painter in the touch layer, positioned adjacent to the skill fan. Drawing and hit tests use the same native geometry. They disappear with modal panels.
 - Sort becomes a game-rendered button inside the inventory / personal-stash panel, using existing panel button styling. Preserve the confirmed inventory/current-personal-page scope, original long-press operation, page-token validation, and original sorting callback.
-- Real widget bounds participate in the Android input route before world / attack / map gestures, so clicking a HUD button cannot move the character or collapse the map. Use cached bounds from the game thread, capture/down-up cancellation, and revalidate current scene/page before dispatch.
+- The skill-attached touch controls participate before world / attack / map gestures, with down/up capture and cancellation; panel Sort reuses the original mouse/widget path and pins the page token at actual touch-down.
 - Remove the added Android toolbar and touch-settings dialog. Preserve the original controller overlay and the passive performance monitor.
 - Android Custom settings append `touch_margin_left`, `touch_margin_right` (0–96 logical points, step 1, default 0) and `perf_overlay` (default off). Margins use the existing left/right selectors. Apply commits and saves, Discard preserves applied values, Defaults sets pending defaults and still requires Apply.
 - Seed missing new native keys from old SharedPreferences before native configuration is loaded. Existing native-file values always win; avoid UI-thread file reads or reinitialization. Native applied-settings snapshots contain left, right, monitor, and report not-ready until native settings load.
