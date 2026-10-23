@@ -1912,9 +1912,10 @@ static void ui_bind_pump(uint64_t root, uint64_t fr) {
 //   [main+0x2d5e8f0] = mode == 1 (on the left); [main+0x2d5c748] = mode != 0 (mini or not); on a change it calls main+0x411540 to re-layout the map and zeroes the scroll values [0x2d5e910 / 914].
 // Changing only the config value without calling the callback leaves the picture unchanged. Here the callback is called directly: pass 0 to switch to fullscreen, pass the config value to switch back (left / right as the player chose on the options page); the config object itself is untouched, so nothing is persisted and the next run follows the player's setting.
 // The controller has no key for switching this mode (the map key − only opens / closes).
-static _Atomic int g_map_req = -1, g_map_full_now;
+static _Atomic int g_map_req = -1, g_map_full_now, g_map_center_req;
 void dm_ui_map_full(int on) { atomic_store(&g_map_req, on != 0); }
 int dm_ui_map_is_full(void) { return atomic_load(&g_map_full_now); }
+void dm_ui_map_recenter(void) { atomic_store(&g_map_center_req, 1); }
 // 真全屏局内，全屏地图的线条要盖在世界上：游戏把地图中心放在「屏幕高的一半」（它读到的是我们写的 16:9 界面高），画出来在 界面矩形 y + 界面高 ÷ 2；
 // 世界的中心在真实画面高的一半，两者差 界面矩形 y −（真实高 − 界面高）÷ 2（贴底时 = 留边高度的一半，地图标记比人低约 128 点）。
 // 地图有一对卷动量 [main+0x2d5e910 / 914]（单位 = 地图格；中心 = 玩家所在格 + 卷动量，main+0x413354 / 0x4133d8；游戏只在切档等处清零，触摸 / 手柄下没有别的写入方），
@@ -1927,6 +1928,13 @@ int dm_ui_map_is_full(void) { return atomic_load(&g_map_full_now); }
 // with panel scale obtained by calling the game's main+0x390b38(panel). Written only for the fullscreen map (not mini) when the UI rect is shifted down; in all other cases the value we wrote is cleared. The top-right minimap uses the top-lift and does not need this.
 static void ui_map_center(module_t *m, uint64_t root, int mini) {
     static int ours; int32_t *sc = (int32_t *)(m->base + 0x2d5e914); int want = 0;
+#if defined(__ANDROID__)
+    // Explicit user action: clear scroll on the guest thread, then apply the existing world/UI alignment below.
+    if (atomic_exchange(&g_map_center_req, 0)) {
+        if (!dm_uiscreen_ingame()) return;
+        *(int32_t *)(m->base + 0x2d5e910) = 0; *sc = 0; ours = 0;
+    }
+#endif
     int x, y, w, h, rw = 0, rh = 0; dm_ui_rect(&x, &y, &w, &h); uint64_t am = !mini && dm_uiscreen_ingame() && dm_screen_real(&rw, &rh) && h > 0 && h < rh ? ui_panel(root, "AutoMap") : 0;
     if (am && *(uint64_t *)am == (uint64_t)m->base + 0x20c58a0) { float q = ceilf(((float (*)(uint64_t))(m->base + 0x390b38))(am) * *(float *)(am + 0x15a8) * 8) / 8; if (q < 0.125f) q = 0.125f;
         float cell = q * *(float *)(m->base + 0x2d5e91c); if (cell > 0.1f) want = (int)lroundf((y - (rh - h) / 2.0f) / cell); }
@@ -1934,15 +1942,16 @@ static void ui_map_center(module_t *m, uint64_t root, int mini) {
     { static int lg; if (lg++ < 8) LOG("全屏地图中心：纵向卷动量 %d → %d 格", *sc, want); } *sc = want; ours = want;
 }
 static void ui_map_pump(module_t *m) {
-#if defined(__OHOS__)
+#if defined(__OHOS__) || defined(__ANDROID__)
     // 鸿蒙的 UI 线程可能在选角面板加载时先请求收起地图；此时原版 AutoMap 尚未创建，回调会解引用空对象。
     // 局外不调用地图回调，也不把旧请求带进下一局；游戏内的切换仍走原路径。
-    // The HarmonyOS UI thread can request a map reset while character select is loading, before the guest AutoMap exists.
+    // Mobile UI threads may request map actions before the guest AutoMap exists.
     // Discard out-of-game requests instead of calling the map callback or carrying them into the next game.
     if (!dm_uiscreen_ingame()) {
         int pending = atomic_exchange(&g_map_req, -1);
         atomic_store(&g_map_full_now, 0);
-        if (pending >= 0) { static int n; if (n++ < 4) LOG("鸿蒙：局外地图切换请求已忽略（地图尚未就绪）"); }
+        atomic_store(&g_map_center_req, 0);
+        if (pending >= 0) { static int n; if (n++ < 4) LOG("地图：局外切换请求已忽略（地图尚未就绪）"); }
         return;
     }
 #endif
@@ -1963,15 +1972,34 @@ static void ui_map_pump(module_t *m) {
     // player had picked it on the options page).
     { static long at = -1; static int tv; uint64_t fr = dm_guest_frame(); if (at < 0) { const char *e = getenv("DM_TEST_AUTOMAP"); at = e ? atol(e) : 0; const char *c = e ? strchr(e, ':') : NULL; tv = c ? atoi(c + 1) : 0; }
       if (at > 0 && fr >= (uint64_t)at) { at = 0; *(volatile int32_t *)(m->base + 0x2d479f4) = tv; ((void (*)(int))(m->base + 0x40f780))(tv); cfg = tv; LOG("测试 DM_TEST_AUTOMAP：帧 %llu 把「透视地图尺寸」改成 %d", (unsigned long long)fr, tv); }
+      // Android has a persistent map control, so do not overwrite its saved fullscreen preference.
+#if !defined(__ANDROID__)
       int dm_padmode_current(void); dm_hud_info hi; dm_hud_get(&hi);
       if (cfg == 0 && hi.valid && !dm_padmode_current()) { *(volatile int32_t *)(m->base + 0x2d479f4) = 2; ((void (*)(int))(m->base + 0x40f780))(2); cfg = 2; mini = *(volatile int32_t *)(m->base + 0x2d5c748);
-          LOG("地图：触屏模式读到「透视地图尺寸」是全屏（0）→ 改回微缩地图放右（2），小地图恢复"); } }
+          LOG("地图：触屏模式读到「透视地图尺寸」是全屏（0）→ 改回微缩地图放右（2），小地图恢复"); }
+#endif
+    }
     int r = atomic_exchange(&g_map_req, -1);
+#if defined(__ANDROID__)
+    static int last_mini = 2;
+    if (cfg == 1 || cfg == 2) last_mini = cfg;
+    // The size button is temporary; only the original options page owns the saved AutoMapMode.
+    if (r >= 0 && cfg >= 0 && cfg <= 2) {
+        int want = r ? 0 : last_mini;
+        if ((mini == 0) != (want == 0)) {
+            ((void (*)(int))(m->base + 0x40f780))(want);
+            mini = *(volatile int32_t *)(m->base + 0x2d5c748);
+            LOG("地图：临时尺寸 %d（玩家设置 %d 保持不变）", want, cfg);
+        }
+    }
+    atomic_store(&g_map_full_now, mini == 0 && cfg >= 0 && cfg <= 2);
+#else
     if (r >= 0) {
         if (cfg != 1 && cfg != 2) { static int n; if (n++ < 4) LOG("地图切换：玩家的「透视地图尺寸」是 %d（不是微缩档），不切", cfg); }
         else if ((mini == 0) != r) { ((void (*)(int))(m->base + 0x40f780))(r ? 0 : cfg); mini = *(volatile int32_t *)(m->base + 0x2d5c748); LOG("地图切换：→ %s（配置值 %d 不动，不落盘）", r ? "全屏" : cfg == 1 ? "微缩放左" : "微缩放右", cfg); }
     }
     atomic_store(&g_map_full_now, mini == 0 && (cfg == 1 || cfg == 2));   // 只把「我们切出来的全屏」算全屏；玩家自己选全屏档的不算 | Only "the fullscreen we switched to" counts as fullscreen; the fullscreen mode chosen by the player does not
+#endif
 }
 // ---------- 右上角小地图的位置：触摸层把它当点击区（点一下 = 地图开关键），矩形取游戏自己的 AutoMap 面板，不写死 ----------
 // AutoMap 控件（虚表 main+0x20c58a0）：+0x70 / +0x74 = x / y、+0x78 / +0x7c = 宽 / 高（布局单位，2160 = 画面高；微缩地图放右时 x = −宽，即贴着画面右边），+0x80 缩放。
