@@ -58,6 +58,17 @@ void dm_android_map_goal_publish(int active) { info_map_active=!!active; ++info_
 static int loot_filter_requests;
 void dm_custom_android_request_loot_filter_toggle(void) { ++loot_filter_requests; }
 static int observed_idle, observed_swap_above, allow_synthetic_touch, synthetic_touch_calls;
+static int ghost_request_on, ghost_request_calls, ghost_rect_available, ghost_rect_calls;
+static int shelf_grid_have, shelf_grid_calls, stack_left_value;
+static float ghost_origin[2], ghost_centre[2], ghost_grid[4], ghost_rect_source[4];
+void mtl_ui_ghost(int on,float px,float py,const float grid[4],float cx,float cy) {
+    ghost_request_on=!!on; ++ghost_request_calls;
+    if (on) { ghost_origin[0]=px; ghost_origin[1]=py; ghost_centre[0]=cx; ghost_centre[1]=cy; memcpy(ghost_grid,grid,sizeof ghost_grid); }
+    else ghost_rect_available=0;
+}
+int mtl_ui_ghost_rect(float r[4]) { ++ghost_rect_calls; if (!ghost_rect_available) return 0; memcpy(r,ghost_rect_source,sizeof ghost_rect_source); return 1; }
+int dm_ui_shelf_grid(float g[4]) { ++shelf_grid_calls; if (!shelf_grid_have) return 0; g[0]=.1f;g[1]=.2f;g[2]=.04f;g[3]=.08f;return 1; }
+int dm_ui_stack_left(void) { return stack_left_value; }
 static int observed_ingame=1, observed_cursor_pending;
 static int observed_free_cursor, observed_binding, observed_touch_active, observed_holding;
 static int allow_cursor, cursor_calls;
@@ -187,6 +198,10 @@ void dm_uiscreen_set_panel(int panel) {
 }
 int dm_uiscreen_ingame(void) { return observed_ingame; }
 static void fixture(int navigation) {
+    dm_android_touch_cancel_pending();
+    ghost_request_on=ghost_request_calls=ghost_rect_available=ghost_rect_calls=shelf_grid_calls=0;
+    shelf_grid_have=1; stack_left_value=2;
+    const float rect[4]={.1f,.2f,.18f,.36f}; memcpy(ghost_rect_source,rect,sizeof rect);
     info_rift_active=info_map_active=info_rift_calls=info_map_calls=info_minimap=info_have_minimap=0;
     allow_empty_binding_hit=0;
     dm_android_touch_obstructions(0,0,0,0,0);

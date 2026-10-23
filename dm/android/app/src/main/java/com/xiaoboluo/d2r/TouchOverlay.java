@@ -37,6 +37,7 @@ public final class TouchOverlay extends View {
     private static native void nativeObstructions(float safeTop, float left, float top, float right, float bottom);
     private static native void nativeCancelPending();
     private static native void nativeLayout(float[] out);
+    private static native void nativeGhost(float[] out);
     private static native void nativeSeedLegacySettings(int left, int right, boolean monitor);
     private static native boolean nativeReadSettings(int[] values);
     private static native boolean nativeReadMonitorStyle(int[] values);
@@ -50,6 +51,7 @@ public final class TouchOverlay extends View {
     // The native layout is checked once per refresh; the view redraws only when it differs from what was last drawn
     // Coordinates, visibility, pressed state and skill set all participate in that snapshot.
     private final float[] probe = new float[DRAW_FLOATS], drawn = new float[DRAW_FLOATS];
+    private final float[] ghostProbe=new float[5], ghostDrawn=new float[5];
     private boolean drawnValid;
     private final float[] publishedLayout=new float[DRAW_FLOATS];
     private boolean layoutPublished;
@@ -59,12 +61,13 @@ public final class TouchOverlay extends View {
             if (inputEnabled && isShown()) {
                 syncAppliedSettings();
                 nativeLayout(probe);
+                nativeGhost(ghostProbe);
                 if (layoutListener!=null && (!layoutPublished || !Arrays.equals(probe,publishedLayout))) {
                     System.arraycopy(probe,0,publishedLayout,0,DRAW_FLOATS);
                     layoutPublished=true;
                     layoutListener.changed(publishedLayout);
                 }
-                if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
+                if (!drawnValid || !Arrays.equals(probe, drawn) || !Arrays.equals(ghostProbe,ghostDrawn)) invalidate();
             }
             Choreographer.getInstance().postFrameCallback(this);
         }
@@ -182,6 +185,7 @@ public final class TouchOverlay extends View {
         if (inputEnabled==enabled) return;
         if (!enabled) cancelTouches();
         inputEnabled=enabled;
+        Arrays.fill(ghostProbe,0); Arrays.fill(ghostDrawn,0);
         layoutPublished=false;
         if (!enabled && layoutListener!=null) layoutListener.changed(null);
         drawnValid=false; invalidate();
@@ -645,6 +649,12 @@ public final class TouchOverlay extends View {
         super.onDraw(canvas); if (!inputEnabled) return; nativeLayout(layout); System.arraycopy(layout, 0, drawn, 0, layout.length); drawnValid=true;
         canvas.save(); canvas.scale(density,density);
         boolean navigation=layout[2]!=0;
+        nativeGhost(ghostDrawn);
+        if(navigation && ghostDrawn[0]!=0) {
+            paint.setShader(null); paint.setStyle(Paint.Style.FILL); paint.setColor(0xd1000000);
+            canvas.drawRect(ghostDrawn[1]*layout[0],ghostDrawn[2]*layout[1],
+                    ghostDrawn[3]*layout[0],ghostDrawn[4]*layout[1],paint);
+        }
         float k=layout[4+12*5+2]/60;   // 与 iOS 同一个字号 / 粗细单位：摇杆半径 / 60 | the same size unit as iOS: joystick radius / 60
         // 同 iOS drawRect：底栏六格（腰带 / 十字）由底栏画、这里只留命中区；难度与 1–8 选择条也由底栏画（hud）。
         // As iOS drawRect: the six bar cells (belt / cross) are drawn by the bar, only their hit areas here; difficulty and the 1-8 picker too (hud).

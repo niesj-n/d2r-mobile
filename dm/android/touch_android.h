@@ -37,6 +37,10 @@ enum { DM_ANDROID_TOUCH_GLYPHS = 4 + 23 * 5, DM_ANDROID_TOUCH_HUD = DM_ANDROID_T
  * Screen directions use +Y down. The existing first 200 floats are stable. */
 /* Appended quick hit circles [x,y,r,visible,pressed]: bare map icon, map position, loot filter. */
 void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]);
+#define DM_ANDROID_TOUCH_GHOST_AVAILABLE 1
+/* Independent read-only cache [visible,left,top,right,bottom], normalized.
+ * JNI never calls shelf/stack getters or the renderer through this read. */
+void dm_android_touch_ghost(float out[5]);
 #ifdef __cplusplus
 }
 #endif

@@ -1,6 +1,7 @@
 #include "touch_android.h"
 #include "rift_info_android.h"
 #include "map_goal_android.h"
+#include "../gfx/nvn/nvn_mtl.h"
 #include "../ios/Sources/dm_touch_controls.h"
 #include "../host/dm_input.h"
 #include "../host/dm_cursor.h"
@@ -49,6 +50,8 @@ typedef struct { int index, cancelled; } quick_gesture;
 static quick_gesture quick[DM_TC_MAX_TOUCH];
 static uint64_t quick_flash[DM_ANDROID_TOUCH_QUICK_COUNT];
 static int ready, focused = 1, cancel, resizing, ui_drag;
+static int ghost_active;
+static float ghost_dim[5];
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
 static float margin_left, margin_right;
 static float safe_top, monitor_left, monitor_top, monitor_right, monitor_bottom;
@@ -167,7 +170,35 @@ static void clear_info_locked(void) {
     dm_android_rift_info_set_minimap(NULL);
     dm_android_map_goal_publish(0);
 }
+static void clear_ghost_locked(void) {
+    if (ghost_active) mtl_ui_ghost(0,0,0,NULL,0,0);
+    ghost_active=0;
+    memset(ghost_dim,0,sizeof ghost_dim);
+}
+static void sync_ghost_locked(void) {
+    const dm_tc_finger *f=tc.pointer_slot>=0 && tc.pointer_slot<DM_TC_MAX_TOUCH ? &tc.finger[tc.pointer_slot] : NULL;
+    float grid[4];
+    if (!focused || !scene.game || frontend || !tc.navigation_mode || !dm_uiscreen_ingame() ||
+            !f || !f->active || !f->shop_drag || !dm_ui_shelf_grid(grid)) {
+        clear_ghost_locked(); return;
+    }
+    float lift=DM_TC_POINTER_LIFT_PT*dm_tc_scale_for_size(width,height);
+    /* Publish before reading: a new origin/grid revokes the renderer's previous
+     * result, so a fresh gesture cannot briefly dim the previous shelf cell. */
+    mtl_ui_ghost(1,f->aim_origin_x/width,f->aim_origin_y/height,grid,f->x/width,(f->y-lift)/height);
+    ghost_active=1;
+    memset(ghost_dim,0,sizeof ghost_dim);
+    float rect[4];
+    if ((!tc.pointer_stack || dm_ui_stack_left()==1) && mtl_ui_ghost_rect(rect)) {
+        int valid=1;
+        for(int i=0;i<4;i++) if(!isfinite(rect[i]) || rect[i]<0 || rect[i]>1) valid=0;
+        if(valid && rect[2]>rect[0] && rect[3]>rect[1]) {
+            ghost_dim[0]=1; memcpy(ghost_dim+1,rect,sizeof rect);
+        }
+    }
+}
 static void cancel_locked(void) {
+    clear_ghost_locked();
     clear_info_locked();
     aim_feedback_reset();
     dm_tc_cancel_all(&tc);
@@ -188,6 +219,7 @@ static void cancel_locked(void) {
 void dm_android_touch_resize(float w, float h, float l, float r, float b) {
     if (!isfinite(w) || !isfinite(h) || w <= 0 || h <= 0) return;
     pthread_mutex_lock(&lock);
+    clear_ghost_locked();
     width = w; height = h; safe_left = fmaxf(0,l); safe_right = fmaxf(0,r); safe_bottom = fmaxf(0,b);
     resizing = cancel = 1; head = tail = 0;
     dm_inv_sort_touch_cancel();
@@ -249,6 +281,7 @@ int dm_android_touch_sort_context(void) {
 }
 void dm_android_touch_cancel_pending(void) {
     pthread_mutex_lock(&lock);
+    clear_ghost_locked();
     clear_info_locked();
     cancel = 1; head = tail = 0;
     action_head = action_tail = 0; action_release = 0;
@@ -263,6 +296,7 @@ int dm_android_touch_gameplay(void) {
 }
 void dm_android_touch_focus(int active) {
     pthread_mutex_lock(&lock);
+    if (!active) clear_ghost_locked();
     if (!active) clear_info_locked();
     focused = !!active; cancel = 1; head = tail = 0; dm_inv_sort_touch_cancel();
     pthread_mutex_unlock(&lock);
@@ -295,7 +329,7 @@ void dm_android_touch_uimsg(const char *cat, const char *act, const char *arg) {
     }
     int fe = !scene.game && touch_overlay();
     if (fe != frontend) { cancel_locked(); head = tail = 0; frontend = fe; }
-    if (tc.navigation_mode != !!nav) aim_feedback_reset();
+    if (tc.navigation_mode != !!nav) { aim_feedback_reset(); clear_ghost_locked(); }
     dm_tc_set_navigation_mode(&tc, nav);
     if (fe || (nav && dm_ui_sort_context() < 0)) { action_head = action_tail = 0; action_release = 0; }
     dm_tc_set_joy_block(&tc, !!(dm_ui_panel_state() & DM_PS_TEXT));
@@ -662,8 +696,15 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     float mini[4], cell;
     dm_android_rift_info_set_minimap(info_active && dm_ui_map_geom(&cell)==1 && dm_ui_minimap_rect(mini) ? mini : NULL);
     dm_android_map_goal_publish(info_active);
+    sync_ghost_locked();
     if (!*lx && !*ly) { *lx = tc.lx; *ly = tc.ly; }
     if (!*rx && !*ry) { *rx = tc.rx; *ry = tc.ry; }
+    pthread_mutex_unlock(&lock);
+}
+void dm_android_touch_ghost(float out[5]) {
+    if(!out) return;
+    pthread_mutex_lock(&lock);
+    memcpy(out,ghost_dim,sizeof ghost_dim);
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_layout(float out[DM_ANDROID_TOUCH_DRAW_FLOATS]) {
