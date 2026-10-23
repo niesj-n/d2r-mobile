@@ -462,3 +462,4 @@ dmHudMapVisibility	地图	Map	Mapa		Карта	지도	游戏HUD地图显示按�
 dmHudMapPosition	位置	Position	Posición		Позиция	위치	游戏HUD地图位置按钮
 dmHudItemNames	物品名	Items	Objetos		Предметы	아이템	游戏HUD物品名称按钮
 dmPanelSort	整理	Sort	Ordenar		Сортировка	정렬	游戏背包及个人仓库整理按钮
+dmCustomDriverSettings	第三方驱动管理	Driver settings	Controladores		Настройки драйверов	드라이버 설정	安卓自定义页驱动管理按钮，仅打开管理器，不应用其他待定设置

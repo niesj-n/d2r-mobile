@@ -19,6 +19,7 @@
 #ifdef __ANDROID__
 #include "dm_render_scale.h"
 #include "dm_fps.h"
+extern void dm_android_driver_settings_request(void) __attribute__((weak));
 #endif
 #include <stdatomic.h>
 #include <stdint.h>
@@ -239,6 +240,10 @@ static void save(void) {
 void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
 #ifdef __ANDROID__
     if (cat && act && arg && !strcmp(cat, "PanelManager") && !strcmp(act, "ClosePanel")) {
+        if (!strcmp(arg, "TouchDriverSettings")) {
+            if (dm_android_driver_settings_request) dm_android_driver_settings_request();
+            return; /* Opening management must not apply/discard pending settings. */
+        }
         for (int i = 1; i < NK; i++) if (android_selector(i)) { char name[80];
             snprintf(name, sizeof name, "TouchCustom_%s_prev", k_keys[i]); int direction = !strcmp(arg, name) ? -1 : 0;
             snprintf(name, sizeof name, "TouchCustom_%s_next", k_keys[i]); if (!strcmp(arg, name)) direction = 1;

@@ -20,6 +20,9 @@ void dm_custom_android_seed_legacy(int left, int right, int monitor);
 // UI-thread safe, no load/IO: returns 0 before native load, otherwise fills
 // {left logical points, right logical points, monitor} from one applied snapshot.
 int dm_custom_android_read_applied(int out[3]);
+// Android platform bridge: request the driver manager from the Custom button
+// PanelManager:ClosePanel:TouchDriverSettings. Does not apply other settings.
+void dm_android_driver_settings_request(void);
 #endif
 int dm_custom_lang_explicit(void);   // 语言开关（键 lang_en）在设置文件里写着的值：-1 没写过（不动原版设置）/ 0 简中 / 1 英文；hle_fs.c 挂存档时读 | Value of the language switch (key lang_en) as written in the settings file: -1 never written (original settings left alone) / 0 Simplified Chinese / 1 English; read by hle_fs.c at save mount
 int dm_custom_voice_explicit(void);   // 单独配音开关（键 voice）：-1 没写过 / 0 中文配音 / 1 英文配音；hle_fs.c 挂存档时读

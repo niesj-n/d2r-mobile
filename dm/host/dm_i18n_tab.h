@@ -464,4 +464,5 @@ static const struct { const char *k, *zh, *en, *es, *mx, *ru, *ko; } k_dm_i18n[]
     { "dmHudMapPosition", "位置", "Position", "Posición", "Posición", "Позиция", "위치" },
     { "dmHudItemNames", "物品名", "Items", "Objetos", "Objetos", "Предметы", "아이템" },
     { "dmPanelSort", "整理", "Sort", "Ordenar", "Ordenar", "Сортировка", "정렬" },
+    { "dmCustomDriverSettings", "第三方驱动管理", "Driver settings", "Controladores", "Controladores", "Настройки драйверов", "드라이버 설정" },
 };

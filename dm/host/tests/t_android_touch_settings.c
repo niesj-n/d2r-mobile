@@ -14,6 +14,9 @@ static void write_settings(const char *path, const char *text) {
 }
 int main(int argc, char **argv) {
     assert(argc == 2);
+    /* Host has no Android bridge; its weak action must remain a safe no-op. */
+    dm_custom_on_uimsg("PanelManager", "ClosePanel", "TouchDriverSettings");
+    assert(!atomic_load(&g_loaded));
     int snapshot[3] = { -7, -7, -7 };
     assert(dm_custom_android_read_applied(snapshot) == 0 && snapshot[0] == -7);
     dm_custom_init(argv[1]); dm_custom_android_seed_legacy(0, 0, 0);

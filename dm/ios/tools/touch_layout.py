@@ -1209,7 +1209,12 @@ _CUSTOM_TEST_ROWS = int(os.environ.get('DM_CUSTOM_TEST_ROWS', '0'))   # 测试�
 _CUSTOM_Q3D_H = 2 * _CUSTOM_LINE_H
 _CUSTOM_ROW_H = [(_CUSTOM_Q3D_H if k in ('voice', 'q3d', 'touch_swap_above') else _CUSTOM_LINE_H) for k, _ in _CUSTOM_ALL] + [_CUSTOM_LINE_H] * _CUSTOM_TEST_ROWS
 _CUSTOM_Y = [_CUSTOM_TITLE_H + sum(_CUSTOM_ROW_H[:i]) for i in range(len(_CUSTOM_ROW_H))]
-_CUSTOM_H = _CUSTOM_TITLE_H + sum(_CUSTOM_ROW_H)
+_CUSTOM_DRIVER_Y = _CUSTOM_TITLE_H + sum(_CUSTOM_ROW_H)
+_CUSTOM_H = _CUSTOM_DRIVER_Y + (_CUSTOM_LINE_H if _CUSTOM_ANDROID else 0)
+# An action inside the scrolling content, not a persistent Custom key/checkbox.
+def _custom_driver_button():
+    return _btn('TouchDriverSettings', _CUSTOM_DRIVER_Y + 35, '@dmCustomDriverSettings',
+                'PanelManager:ClosePanel:TouchDriverSettings', x=0, anchor=False) if _CUSTOM_ANDROID else ''
 def _custom_toggle_row(i, key, label):
     y, h = _CUSTOM_Y[i], _CUSTOM_LINE_H
     return ('        { "type": "TextBoxWidget", "name": "TouchCustom_%s_Text", "fields": { "rect": { "x": 0, "y": %d, "width": 1000, "height": %d }, "text": "%s", "style": "$StyleSettingsText", "style/options/newlineHandling": "standard" } },\n'
@@ -1293,14 +1298,14 @@ def _custom_page(text):
            + '            { "type": "Widget", "name": "TouchCustomRows", "fields": { "rect": { "x": 0, "y": 0, "width": 1500, "height": %d } }, "children": [\n' % _CUSTOM_H
            + _custom_lang_row() + ''.join((_custom_selector_row(i, k, l) if _CUSTOM_ANDROID and k in ('eco_fps', 'render_scale', 'touch_margin_left', 'touch_margin_right') else _custom_q3d_row(i, k) if k in ('voice', 'q3d', 'touch_swap_above') else _custom_toggle_row(i, k, l)) for i, (k, l) in enumerate(_CUSTOM_ALL) if i) + _CUSTOM_LANG_HINT
            + ''.join('        { "type": "TextBoxWidget", "name": "TouchCustomTest%d_Text", "fields": { "rect": { "x": 0, "y": %d, "width": 1000, "height": %d }, "text": "@KeyBindingTypeCustom", "style": "$StyleSettingsText" } },\n'
-                     % (n, _CUSTOM_Y[len(_CUSTOM_ALL) + n], _CUSTOM_LINE_H) for n in range(_CUSTOM_TEST_ROWS)) +
+                     % (n, _CUSTOM_Y[len(_CUSTOM_ALL) + n], _CUSTOM_LINE_H) for n in range(_CUSTOM_TEST_ROWS)) + _custom_driver_button() +
            # 手柄模式的选中框（同符文之语清单 TouchRwSel）：框住十字键选中的那一行，宿主摆（dm_custom.c）；触屏模式一直在屏外（只把 x 挪出去、y 留在内容范围内：滚动区按子控件的范围算内容高度，y 放到 99999 会把可滚范围撑到十万）。和各行在同一个容器里，跟着滚
            # Selection frame in controller mode (same as TouchRwSel of the runeword list): frames the row selected with the D-pad, positioned by the host (dm_custom.c); always off-screen in touch mode (only x is moved out while y stays within the content range: the scroll area computes the content height from the extent of its child widgets, and a y of 99999 would stretch the scrollable range to a hundred thousand). It is in the same container as the rows and scrolls with them
            '        { "type": "NineTileImageWidget", "name": "TouchCustomSel", "fields": { "rect": { "x": 99999, "y": 0, "width": 1000, "height": 100 }, "backgroundColor": [ 0, 0, 0, 0 ], '
            '"filename": "Controller/PANEL/ControllerSelector/ControllerSelectorBorder", "tileScale": 0.5 } },\n'
            '            ] },\n        ] },\n'
            '    ]\n}\n')
-    return out, len(_CUSTOM_ALL) + 2
+    return out, len(_CUSTOM_ALL) + 2 + int(_CUSTOM_ANDROID)
 PRESENT['controller/console/videooptionspanelhd.json'] = _custom_page
 # 手柄版选项页：原版页签条不动，只把第一项「视频」换成「自定义」——它打开的视频页就是上面那份自定义页（两种模式同一份内容）
 # Controller options page: the original tab bar is untouched, only the first item "Video" is replaced by "Custom"; the video page it opens is the Custom
