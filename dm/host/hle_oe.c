@@ -7,6 +7,10 @@
 #include "dm_cursor.h"
 #include "hle.h"
 #include "dm_uiscreen.h"
+#ifdef __ANDROID__
+#include "dm_custom.h"
+#include "dm_render_scale.h"
+#endif
 
 // 运行模式是运行时状态（前端可改：iOS 过热降级切掌机）：唯一来源在此，启动时从 DM_OPMODE 取一次，之后不再读环境变量
 // The operation mode is runtime state (the front end can change it: iOS overheat downgrade switches to handheld): the single source is here, taken once from DM_OPMODE at startup, the environment variable is not read again afterwards
@@ -178,11 +182,22 @@ static int s3_max_level(float cfg, float floor) {
 // 配置值：DM_3D_SCALE（0.5–1.0），缺省手机 0.75、Mac 宿主 1.0；读一次
 // Configured value: DM_3D_SCALE (0.5–1.0), default 0.75 on phones and 1.0 on the Mac host; read once
 static float s3_cfg(void) {
+#ifdef __ANDROID__
+    const char *e = getenv("DM_3D_SCALE");
+    if (e) {
+        char *end; float v = strtof(e, &end);
+        if (end == e || *end || dm_android_render_scale_index(v) < 0)
+            die("DM_3D_SCALE 非法：%s（安卓只接受固定渲染档）", e);
+        return v;   // Explicit debug override; the player's saved selection is otherwise authoritative.
+    }
+    return dm_custom_render_scale();
+#else
     static float cfg = -1;
     if (cfg < 0) { const char *e = getenv("DM_3D_SCALE"); float v = DM_PHONE ? 0.75f : 1.0f;
         if (e) { char *end; v = strtof(e, &end); if (end == e || *end || !(v >= 0.5f && v <= 1.0f)) die("DM_3D_SCALE 非法：%s（要求 0.5–1.0）", e); }
         cfg = v; }
     return cfg;
+#endif
 }
 #define S3_FLOOR_DEF 0.60f   // 待真机扫档（热机稳态最后 30 秒掉帧 ≤ 1%）定 | To be set by a device level sweep (dropped frames ≤ 1% in the last 30 s of warm steady state)
 // 纯函数控制器（单测 t_oe.c 直接喂序列）：level 0 = 配置值，越大越低。判据只认实际上屏：
@@ -252,11 +267,43 @@ void dm_3d_scale_resumed(void) { atomic_store(&g_scale3d_resumed, 1); }   // 前
 // GPU-time-driven dynamic 3D scale (DM_3D_SCALE_GPU=1, on by default on HarmonyOS): the controller above judges by "60 fps, > 25 ms is a drop", so around 30 fps it hits the bottom as soon as
 // a run starts, and its levels are absolute. Here, every 2 s: frame time > 35 ms with the GPU at >= 85% of it (GPU-bound, common once hot) -> one level down; GPU below 75% (headroom)
 // for 10 s in a row -> one level up. Level = configured value x factor, floor DM_3D_SCALE_GPU_FLOOR (default 0.40). CPU-bound frames do not lower it (resolution does not save CPU).
+#ifndef __ANDROID__
 static const float g_s3g_mult[] = {0.92f, 0.85f, 0.78f, 0.72f, 0.66f, 0.60f};
+#endif
+int mtl_fps_target(void);
+double mtl_display_refresh(void), dm_pace_hz(double screen_hz, double target_hz);
 static _Atomic float g_s3g_scale;   // > 0：覆盖动态档（scale3d_tick）| > 0: overrides the dynamic level (scale3d_tick)
+#ifdef __ANDROID__
+static _Atomic int g_s3g_reset;
+#endif
 __attribute__((weak)) double xbg_recent_gpu_ms(void) { return -1; }   // 空的弱定义（不是弱声明）：苹果链接器要求弱引用链接时有定义；Vulkan 后端 / 鸿蒙平台层给强定义 | empty weak definitions (not declarations): Apple's linker needs a weak reference to resolve; the Vulkan backend / HarmonyOS platform give the strong ones
 static int s3g_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_3D_SCALE_GPU"); on = e && *e == '1'; } return on; }
 static void s3g_feed(double iv_ms) {
+#ifdef __ANDROID__
+    static double elapsed; static int level, good, bad; static float prior_cfg;
+    float cfg = s3_cfg();
+    if (cfg != prior_cfg || atomic_exchange(&g_s3g_reset, 0)) {
+        prior_cfg = cfg; level = good = bad = 0; elapsed = 0;
+        atomic_store(&g_s3g_scale, 0);
+    }
+    if (!dm_ingame_now()) { level = good = bad = 0; elapsed = 0; atomic_store(&g_s3g_scale, 0); return; }
+    if (iv_ms <= 0) { elapsed = 0; good = bad = 0; return; }
+    elapsed += iv_ms;
+    if (elapsed < 2000.0) return;
+    double gpu = xbg_recent_gpu_ms();
+    int fps = mtl_fps_target();
+    double cadence_hz = dm_pace_hz(mtl_display_refresh(), fps);
+    double budget_ms = 1000.0 / (cadence_hz > 0 ? cadence_hz : fps);
+    elapsed = 0;
+    if (gpu <= 0) { good = bad = 0; return; }
+    int old = level;
+    level = dm_android_render_scale_gpu_next(cfg, level, gpu, budget_ms, &good, &bad);
+    if (level != old) {
+        float ratio = dm_android_render_scale_gpu_value(cfg, level);
+        atomic_store(&g_s3g_scale, level ? ratio : 0);
+        LOG("Android 动态 3D：目标 %d FPS，实际节拍 %.1f Hz，GPU %.1f ms，比例 %.2f（上限 %.2f）", fps, cadence_hz, gpu, ratio, cfg);
+    }
+#else
     static double acc; static unsigned n; static uint64_t hold; static int lv, good, maxlv = -1, was_in; static float cfg;
     if (maxlv < 0) { const char *e = getenv("DM_3D_SCALE"), *f = getenv("DM_3D_SCALE_GPU_FLOOR"); cfg = e ? strtof(e, NULL) : 0.75f; float fl = f ? strtof(f, NULL) : 0.40f;
         maxlv = 0; for (int k = 0; k < (int)(sizeof g_s3g_mult / sizeof g_s3g_mult[0]); k++) if (cfg * g_s3g_mult[k] >= fl - 1e-4f) maxlv = k + 1;
@@ -274,8 +321,14 @@ static void s3g_feed(double iv_ms) {
     else good = 0;
     if (lv != old) { hold = now + 4 * S3_SEC; atomic_store(&g_s3g_scale, lv ? cfg * g_s3g_mult[lv - 1] : 0.0f);
         LOG("3D 比例控制（按 GPU 耗时）：帧 %.1f ms、GPU %.1f ms → %s到第 %d 档（3D 比例 %.2f）", fr, g, lv > old ? "降" : "升", lv, lv ? cfg * g_s3g_mult[lv - 1] : cfg); }
+#endif
 }
 void dm_3d_scale_feed(double iv_ms) {   // 出图线程每帧调（diag.c dm_perf_present 转来）：实际上屏间隔 ms，−1 = 被丢弃，0 = 无读数 | called by the present thread every frame (forwarded from diag.c dm_perf_present): actual present interval in ms, −1 = dropped, 0 = no reading
+#ifdef __ANDROID__
+    if (!dm_custom_get("render_dynamic")) { atomic_store(&g_s3g_reset, 1); atomic_store(&g_s3g_scale, 0); return; }
+    s3g_feed(iv_ms);   // GPU budget; CPU-only long frames do not lower 3D quality.
+    return;
+#endif
     static scale3d_ctl c; static int on = -1; static long inj0 = -1, inj1 = -1;
     if (on < 0) { const char *e = getenv("DM_3D_SCALE_DYN"), *j = getenv("DM_3D_SCALE_DYN_INJECT"); on = !(e && !strcmp(e, "0")) && !getenv("DM_THERMAL_NOFALLBACK");
         if (j) { inj0 = atol(j); inj1 = strchr(j, '-') ? atol(strchr(j, '-') + 1) : inj0; }
@@ -302,16 +355,38 @@ void dm_3d_scale_hot(int hot) { (void)hot; }   // 过热不再直接降档（改
 static _Atomic float g_scale3d_cur = 1.0f;
 float dm_3d_scale_cur(void) { return atomic_load(&g_scale3d_cur); }
 static void scale3d_tick(void) {
-    static float want_cfg = -1, cur = 1.0f; static module_t *main;
+    static float want_cfg = -1,
+#ifdef __ANDROID__
+                 cur = -1.0f;
+#else
+                 cur = 1.0f;
+#endif
+    static module_t *main;
     if (want_cfg < 0) {
         want_cfg = s3_cfg();
         for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) main = &g_mod[i];
     }
+#ifdef __ANDROID__
+    want_cfg = s3_cfg();
+    static float last_cfg = -1.0f; static int last_dynamic = -1;
+    int dynamic = dm_custom_get("render_dynamic");
+    if (want_cfg != last_cfg || dynamic != last_dynamic) {
+        last_cfg = want_cfg; last_dynamic = dynamic;
+        atomic_store(&g_s3g_reset, 1); atomic_store(&g_s3g_scale, 0);
+    }
+    float want;
+    if (dynamic) {
+        float gpu = atomic_load(&g_s3g_scale);
+        want = gpu > 0 && gpu < want_cfg ? gpu : want_cfg;
+    } else want = dm_android_render_scale_fixed(want_cfg, atomic_load(&g_scale3d_level),
+                                                atomic_load(&g_s3g_scale), dm_nvn_ruler_truth());
+#else
     // 动态档：0 = 配置值，k = 表里第 k 个低于配置值的比例
     // Dynamic level: 0 = configured value, k = the k-th table scale below the configured value
     int lv = atomic_load(&g_scale3d_level); float dyn = s3_level_scale(want_cfg, lv);
     if (s3g_on()) { float g = atomic_load(&g_s3g_scale); dyn = g > 0 && g < want_cfg ? g : want_cfg; }   // GPU 时间控制器（DM_3D_SCALE_GPU=1，鸿蒙缺省开）覆盖帧间隔档 | GPU-time controller (DM_3D_SCALE_GPU=1, on by default on HarmonyOS) overrides the frame-interval level
     float want = dm_nvn_ruler_truth() ? 1.0f : dyn;
+#endif
     if (want == cur || !main || dm_nvn_frame_count() < 30) return;
     uintptr_t renderer = *(uintptr_t *)(main->base + 0x31e0848); if (!renderer) return;
     uint32_t ow = *(uint32_t *)(renderer + 0xee88), oh = *(uint32_t *)(renderer + 0xee8c); if (!ow || !oh) return;
@@ -321,6 +396,13 @@ static void scale3d_tick(void) {
     cur = want; atomic_store(&g_scale3d_cur, want);
     LOG("3D 渲染比例 %.2f：3D 目标 %ux%u，输出 %ux%u（帧 %llu）", want, *(uint32_t *)(renderer + 0xee78), *(uint32_t *)(renderer + 0xee7c),
         *(uint32_t *)(renderer + 0xee88), *(uint32_t *)(renderer + 0xee8c), (unsigned long long)dm_nvn_frame_count());
+#ifdef __ANDROID__
+    if (want > 1.0f && (*(uint32_t *)(renderer + 0xee78) <= ow || *(uint32_t *)(renderer + 0xee7c) <= oh))
+        LOG("【红】3D 比例 %.2f 请求后目标未超过输出，须核游戏内部尺寸限制", want);
+    if (*(uint32_t *)(renderer + 0xee88) != ow || *(uint32_t *)(renderer + 0xee8c) != oh)
+        LOG("【红】3D 比例改变了输出尺寸：原 %ux%u，现 %ux%u", ow, oh,
+            *(uint32_t *)(renderer + 0xee88), *(uint32_t *)(renderer + 0xee8c));
+#endif
 }
 HLE_FORCE("_ZN2nn2oe25TryPopNotificationMessageEPj", "系统通知队列；前端状态变化入队", unsigned, h_oe_TryPopMsg, uint32_t *msg) {
     scale3d_tick();

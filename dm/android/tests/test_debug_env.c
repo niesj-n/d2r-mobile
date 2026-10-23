@@ -13,10 +13,14 @@ int main(void) {
     dm_android_debug_values out;
     const char *valid="# bounded A/B\r\nDM_3D_SCALE=0.75\r\nDM_3D_SCALE_DYN=0\r\nDM_3D_SCALE_FLOOR=0.60\r\n";
     assert(dm_android_debug_parse(valid,strlen(valid),&out));assert(out.present==7);assert(!strcmp(out.value[0],"0.75"));
+    const char *supersampled="DM_3D_SCALE=1.25\nDM_3D_SCALE_DYN=1\n";
+    assert(dm_android_debug_parse(supersampled,strlen(supersampled),&out));
+    assert(!strcmp(out.value[0],"1.25"));
+    assert(dm_android_debug_parse("DM_3D_SCALE=0.50\n",strlen("DM_3D_SCALE=0.50\n"),&out));
     rejected("DM_NVN_SYNC=0\n");rejected("PATH=/tmp\n");rejected("DM_3D_SCALE_DYN=2\n");
     rejected("DM_3D_SCALE=nan\n");rejected("DM_3D_SCALE=1e0\n");rejected("DM_3D_SCALE=1.01\n");
     rejected("DM_3D_SCALE=Inf\n");rejected("DM_3D_SCALE=0.75garbage\n");
-    rejected("DM_3D_SCALE=0.5\n");rejected("DM_3D_SCALE=0.75\nDM_3D_SCALE=0.75\n");
+    rejected("DM_3D_SCALE=0.50\nDM_3D_SCALE_FLOOR=0.60\n");rejected("DM_3D_SCALE=0.75\nDM_3D_SCALE=0.75\n");
     rejected("DM_3D_SCALE_DYN=0 =1\n");
     char long_line[140];memset(long_line,'#',sizeof long_line);assert(!dm_android_debug_parse(long_line,sizeof long_line,&out));
     const char nul[]="DM_3D_SCALE_DYN=0\0DM_3D_SCALE_DYN=1";assert(!dm_android_debug_parse(nul,sizeof nul-1,&out));

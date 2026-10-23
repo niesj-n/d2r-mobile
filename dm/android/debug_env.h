@@ -7,12 +7,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include "../host/dm_render_scale.h"
 
 typedef struct { unsigned present; char value[3][16]; } dm_android_debug_values;
 static const char *const dm_android_debug_keys[]={"DM_3D_SCALE","DM_3D_SCALE_DYN","DM_3D_SCALE_FLOOR"};
 
-/* 完整解析后才输出；未知键、重复、超限或floor高于起点使整份失效。
- * Publish only a complete parse; unknown keys, duplicates, limits or a floor above the starting scale reject the file. */
+/* 完整解析后才输出；未知键、重复、超限或显式floor高于起点使整份失效。
+ * Publish only a complete parse; unknown keys, duplicates, limits or an explicitly higher floor reject the file. */
 static int dm_android_debug_parse(const char *text,size_t bytes,dm_android_debug_values *out) {
     if(!text || !out || bytes>4096)return 0;
     dm_android_debug_values parsed={0};size_t offset=0;
@@ -44,13 +45,14 @@ static int dm_android_debug_parse(const char *text,size_t bytes,dm_android_debug
             }
             if(!digits)return 0;
             double scale=strtod(parsed.value[key],NULL);
-            if(!(scale>=.50 && scale<=1.00))return 0;
+            if(!(scale>=.50 && scale<=1.25))return 0;
+            if(key==0 && dm_android_render_scale_index((float)scale)<0)return 0;
         }
         parsed.present|=1u<<key;
     }
-    double scale=(parsed.present&1)?strtod(parsed.value[0],NULL):.75;
+    double scale=(parsed.present&1)?strtod(parsed.value[0],NULL):.85;
     double floor=(parsed.present&4)?strtod(parsed.value[2],NULL):.60;
-    if(floor>scale)return 0;
+    if((parsed.present&4) && floor>scale)return 0;
     *out=parsed;return 1;
 }
 /* 缺文件返回0，拒绝返回-1，通过返回1；无有效整份结果时不修改输出。

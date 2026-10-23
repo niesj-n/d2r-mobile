@@ -33,7 +33,11 @@ for suffix in ('Near', 'Far'):
     assert any(n.get('fields', {}).get('text') == '@dmCustomTouchSwap' + suffix for n in nodes.values())
 host_src = (root / 'host/dm_custom.c').read_text()
 def host_variant(voice):   # 宿主按 VOICE_ROW（DM_MOVIE_FFMPEG）条件编译的两份键表：缺省去掉 #if VOICE_ROW 块，开关包只去掉预处理行
-    keep = re.sub(r'#if VOICE_ROW\n(.*?)#endif\n', (lambda m: m[1]) if voice else '', host_src, flags=re.S)
+    keys = re.search(r'static const char \*const k_keys\[\].*?#define NK', host_src, re.S)[0]
+    defaults = re.search(r'static const int k_def\[NK\].*?#define K_VOICE', host_src, re.S)[0]
+    keep = keys + '\n' + defaults
+    keep = re.sub(r'#ifdef __ANDROID__\n.*?#else\n(.*?)#endif', r'\1', keep, flags=re.S)
+    keep = re.sub(r'#if VOICE_ROW\n(.*?)#endif\n', (lambda m: m[1]) if voice else '', keep, flags=re.S)
     return re.sub(r'(?m)^#.*\n', '', keep)
 for voice in (False, True):
     if voice:
