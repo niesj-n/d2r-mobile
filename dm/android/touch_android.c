@@ -55,6 +55,9 @@ typedef struct { int kind; float x,y; double time; uint64_t key; } direct_gestur
 static direct_gesture direct[DM_TC_MAX_TOUCH];
 static uint32_t selected_point;
 static double stat_next, skill_add_at;
+/* iOS front_ios.m: -2 = arm on a free-cursor page, -1 = keep the selected tooltip. */
+static double tip_until = -2;
+static int last_binding, bind_park_pending, cursor_parked;
 static unsigned map_world_seq;
 static int map_world_pending;
 static uint64_t epoch = 1, world = 1, pulse_epoch, pulse_sample, resume_sample;
@@ -169,6 +172,7 @@ static void cancel_locked(void) {
     labels_ready_at = 0;
     dm_inv_sort_touch_cancel();
     memset(direct,0,sizeof direct); selected_point=0; stat_next=skill_add_at=0; map_world_pending=0;
+    tip_until=-2; last_binding=bind_park_pending=cursor_parked=0;
     dm_cursor_clear();
 }
 void dm_android_touch_resize(float w, float h, float l, float r, float b) {
@@ -449,6 +453,33 @@ static void point_tick(double now) {
         } else if (now>skill_add_at+1 || !points.tree_open) skill_add_at=0;
     }
 }
+static void panel_cursor_tick(double now) {
+    int binding=dm_ui_bind_active();
+    if (!tc.navigation_mode || frontend || !dm_ui_free_cursor()) {
+        /* Only revoke our own parking request; never clear a player's drag/selection. */
+        if (cursor_parked) tc.pointer_valid=0;
+        cursor_parked=0;
+        tip_until=-2; last_binding=bind_park_pending=0;
+        return;
+    }
+    if (binding==2 && last_binding!=2) bind_park_pending=1;
+    if (binding!=2) bind_park_pending=0;
+    last_binding=binding;
+    int idle=tc.pointer_slot<0 && !tc.holding && !dm_ui_touch_active() &&
+             !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending();
+    if (bind_park_pending && idle) {
+        tc.pointer_valid=1; tc.pointer_x=.155f*width; tc.pointer_y=.5f*height;
+        cursor_parked=1;
+        bind_park_pending=0;
+    }
+    if (tc.pointer_slot>=0) tip_until=-1;
+    else if (tip_until==-2) tip_until=now+.3;
+    else if (tip_until>0 && now>=tip_until && idle && !binding) {
+        tc.pointer_valid=1; tc.pointer_x=.02f*width; tc.pointer_y=.5f*height;
+        cursor_parked=1;
+        tip_until=0;
+    }
+}
 void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, int32_t *ly, int32_t *rx, int32_t *ry) {
     (void)guest_now;
     pthread_mutex_lock(&lock);
@@ -493,6 +524,8 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
         if (e.phase == 0) latched[e.slot] = 0;
         if (e.phase == 0) {
             if (dm_tc_belt_outside(&tc,e.x,e.y)) { dm_belt_expand(0); continue; }
+            if (cursor_parked) tc.pointer_valid=0;
+            cursor_parked=0;
             if (tc.navigation_mode) dm_product_ui_touch(0);
             dm_tc_begin_at(&tc,e.slot,e.x,e.y,e.time);
             if (!tc.navigation_mode && f->target == DM_TC_PORTAL) { dm_tc_cancel_finger(&tc,e.slot); dm_tp_request(); }
@@ -508,6 +541,9 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
                 dm_ui_drag_move(e.x/width,e.y/height);
             }
             if (e.phase == 2) {
+                int was_pointer=tc.pointer_slot==e.slot, dragged=ui_drag && was_pointer;
+                unsigned mouse=tc.mouse_click_seq, use=tc.use_seq, ident=tc.ident_seq;
+                unsigned stack=tc.stack_take_seq, item=tc.item_tap_seq, long_press=tc.long_press_seq;
                 tc.tap_button=0; tc.tap_move=0;
                 if (tc.navigation_mode) {
                     float nx,ny;
@@ -530,6 +566,13 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
                         else skill_add_at=e.time+.3;
                     } else selected_point=id;
                 }
+                /* Keep deliberate item/point selections readable. Only post-use/drop tooltips
+                   expire after 2.8s; ordinary UI clicks yield after .05s (iOS front_ios.m:655–661). */
+                int item_tap=tc.item_tap_seq!=item && !dragged && tc.use_seq==use &&
+                             tc.ident_seq==ident && tc.stack_take_seq==stack &&
+                             tc.long_press_seq==long_press && tc.mouse_click_seq==mouse;
+                if (was_pointer && tc.navigation_mode)
+                    tip_until=(tc.tap_move_seq!=moved || item_tap) ? -1 : e.time+(tc.mouse_click_seq!=mouse ? .05 : 2.8);
             }
         } else {
             if (tc.navigation_mode) dm_product_ui_touch(3);
@@ -553,6 +596,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     /* 当期iOS：游戏内按住技能连续施放；换绑从技能树长按进入。
        Current iOS: holding a gameplay skill keeps casting; rebinding starts by holding an icon in the skill tree. */
     point_tick(now);
+    panel_cursor_tick(now);
     dm_tc_tick(&tc,now); requests();
     uint64_t sample = dm_input_samples();
     if (tc.pulse_button && pulse_epoch != tc.pulse_epoch) {
