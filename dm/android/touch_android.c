@@ -6,6 +6,8 @@
 #include "../host/dm_product_ui.h"
 /* Queued by the host and applied on the guest sampling thread. */
 extern void dm_ui_map_cycle_position(void);
+/* Atomic request only; the canonical Custom setting is applied by its UI pump. */
+extern void dm_custom_android_request_loot_filter_toggle(void);
 #include "../host/dm_hud.h"
 #include "../host/dm_uiscreen.h"
 #include "../host/dm_custom.h"
@@ -156,7 +158,7 @@ void dm_android_touch_obstructions(float top, float l, float t, float r, float b
 /* Caller holds lock, including the native quick-touch route. */
 static int action_locked(int action) {
     if (action != DM_ANDROID_ACTION_MAP_VISIBILITY && action != DM_ANDROID_ACTION_MAP_POSITION &&
-        action != DM_ANDROID_ACTION_ITEM_NAMES && action != DM_ANDROID_ACTION_SORT) return 0;
+        action != DM_ANDROID_ACTION_LOOT_FILTER && action != DM_ANDROID_ACTION_SORT) return 0;
     int sort = action == DM_ANDROID_ACTION_SORT, page = sort ? dm_ui_sort_context() : -1;
     if (focused && ready && scene.game && !frontend &&
         (sort ? tc.navigation_mode && (page == 0 || (page >= 4 && page <= 8)) : !tc.navigation_mode) && action_tail-action_head < 256) {
@@ -306,8 +308,14 @@ static dm_tc_target quick_circle(int index) {
         return (dm_tc_target){fminf(x,right-r),y,r,0};
     }
     const dm_tc_target *main=&tc.layout.target[DM_TC_MAIN];
-    float angle=(index==1 ? -125.0f : -103.0f)*(3.14159265358979323846f/180.0f);
-    return (dm_tc_target){main->x+214*k*cosf(angle),main->y+214*k*sinf(angle),18*k,0};
+    if (tc.layout.swap_above) {
+        /* Use the default set-switch opening when I/II is moved to the left. */
+        float dx=index==1 ? -38 : -96, dy=index==1 ? -156 : -170;
+        return (dm_tc_target){main->x+dx*k,main->y+dy*k,26*k,0};
+    }
+    /* Continue the I/II/portal arc with skill-size sockets and close spacing. */
+    float angle=(index==1 ? -120.0f : -138.0f)*(3.14159265358979323846f/180.0f);
+    return (dm_tc_target){main->x+186*k*cosf(angle),main->y+186*k*sinf(angle),26*k,0};
 }
 static int quick_visible(void) {
     return focused && ready && scene.game && !frontend && !tc.navigation_mode &&
@@ -523,11 +531,8 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
                 *buttons |= DM_BTN_MINUS;
                 action_release = 1;
             } else if (action == DM_ANDROID_ACTION_MAP_POSITION && !tc.navigation_mode) dm_ui_map_cycle_position();
-            else if (action == DM_ANDROID_ACTION_ITEM_NAMES && !tc.navigation_mode) {
-                *buttons |= DM_BTN_L;
-                action_release = 1;
-                labels_done = 1;
-            }
+            else if (action == DM_ANDROID_ACTION_LOOT_FILTER && !tc.navigation_mode)
+                dm_custom_android_request_loot_filter_toggle();
         }
     } else { action_head = action_tail = 0; action_release = 0; labels_ready_at = 0; }
     *buttons |= tc.buttons;

@@ -6,12 +6,14 @@
     <string name="dmAndroidTouchRestore">恢复默认</string>
     <string name="dmAndroidTouchSaveFailed">触控设置未能保存，请重试。</string>
     <string name="dmAndroidMapVisibilityShort">地图</string>
-    <string name="dmAndroidMapPositionShort">位置</string>
+    <string name="dmAndroidMapPositionShort">地图位置</string>
     <string name="dmAndroidTouchSettingsShort">设置</string>
     <string name="dmAndroidMapVisibility">显示或隐藏地图</string>
     <string name="dmAndroidMapPosition">地图位置依次切换左、中、右</string>
     <string name="dmAndroidItemNamesShort">物品名</string>
     <string name="dmAndroidItemNames">显示或隐藏地面物品名称</string>
+    <string name="dmAndroidLootFilterShort">物品过滤</string>
+    <string name="dmAndroidLootFilter">开启或关闭物品过滤</string>
     <string name="dmAndroidSortShort">整理</string>
     <string name="dmAndroidSortBag">整理背包</string>
     <string name="dmAndroidSortPersonal">整理当前个人仓库页</string>

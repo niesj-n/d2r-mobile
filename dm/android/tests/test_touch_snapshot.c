@@ -22,7 +22,7 @@
 #endif
 #ifndef DM_ANDROID_TOUCH_ACTIONS_AVAILABLE
 enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
-       DM_ANDROID_ACTION_ITEM_NAMES=4, DM_ANDROID_ACTION_SORT=5 };
+       DM_ANDROID_ACTION_LOOT_FILTER=4, DM_ANDROID_ACTION_SORT=5 };
 #define dm_android_touch_action(action) ((void)(action))
 #endif
 #ifndef DM_ANDROID_TOUCH_GAMEPLAY_GATE_AVAILABLE
@@ -37,6 +37,7 @@ enum { DM_ANDROID_ACTION_MAP_VISIBILITY=2, DM_ANDROID_ACTION_MAP_POSITION=3,
 #endif
 
 _Static_assert(DM_ANDROID_TOUCH_GLYPHS==119 && DM_ANDROID_TOUCH_HUD==167 && DM_ANDROID_TOUCH_QUICK==185 && DM_ANDROID_TOUCH_QUICK_COUNT==3, "The legacy prefix offsets must stay stable");
+_Static_assert(DM_ANDROID_ACTION_LOOT_FILTER==4, "Filter keeps the existing quick action number");
 _Static_assert(DM_ANDROID_TOUCH_DRAW_FLOATS == 200, "Review the Java/native ABI before changing this test");
 enum { DRAW_JOY = 12, DRAW_SWAP = 13, DRAW_DIFF = 14, DRAW_PICK0 = 15 };
 static const char *case_name = "startup";
@@ -49,6 +50,8 @@ void dm_product_ui_touch(int phase) { if (phase==0) ++product_down_calls; else i
 static unsigned panel_calls;
 static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_calls, map_position_calls;
 static int map_absolute=-1, map_toggles_pending;
+static int loot_filter_requests;
+void dm_custom_android_request_loot_filter_toggle(void) { ++loot_filter_requests; }
 static int observed_idle, observed_swap_above, allow_synthetic_touch, synthetic_touch_calls;
 static int observed_ingame=1, observed_cursor_pending;
 static int sort_context=-1, sort_inventory_calls, sort_personal_calls, sort_cancel_calls, sort_last_token=-1;
@@ -189,7 +192,7 @@ static void fixture(int navigation) {
     observed_ingame=1; observed_cursor_pending=0;
     sort_context=-1; sort_inventory_calls=sort_personal_calls=sort_cancel_calls=0; sort_last_token=-1;
     map_full=map_full_calls=map_toggle_calls=map_center_calls=map_position_calls=map_toggles_pending=0;
-    map_absolute=-1; map_mode=1;
+    map_absolute=-1; map_mode=1; loot_filter_requests=0;
     dm_tc_set_safe_insets(0, 0); dm_tc_set_edge_bottom(0); dm_tc_set_safe_bottom(0); dm_tc_set_swap_above(0);
     dm_tc_set_android_edge_margins(0, 0);
     dm_tc_set_panel_state(0); dm_tc_set_tap_box(0); dm_tc_set_cur_stack(0); dm_tc_set_hover_unid(0);
@@ -643,7 +646,7 @@ static void test_android_full_map_preserves_existing_controls(void) {
     REQUIRE(map_full_calls==1 && map_absolute==0);
 }
 
-static void test_android_item_names_default_and_manual(void) {
+static void test_android_item_names_default_and_filter_independent(void) {
     fixture(0); scene.game=1;
     REQUIRE(queue_sample()==0);
     test_clock_ns += UINT64_C(1400000000);
@@ -657,14 +660,13 @@ static void test_android_item_names_default_and_manual(void) {
     REQUIRE((queue_sample() & DM_BTN_L)==0);
 
     fixture(0); scene.game=1;
-    dm_android_touch_action(DM_ANDROID_ACTION_ITEM_NAMES);
-    REQUIRE((queue_sample() & DM_BTN_L)!=0);
-    REQUIRE((queue_sample() & DM_BTN_L)==0);
-    dm_android_touch_action(DM_ANDROID_ACTION_ITEM_NAMES);
-    REQUIRE((queue_sample() & DM_BTN_L)!=0);
-    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_LOOT_FILTER);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==1 && !labels_done);
+    dm_android_touch_action(DM_ANDROID_ACTION_LOOT_FILTER);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==2 && !labels_done);
     test_clock_ns += UINT64_C(2000000000);
-    REQUIRE((queue_sample() & DM_BTN_L)==0);
+    REQUIRE(queue_sample()==DM_BTN_L && labels_done); /* Names remain an independent default. */
+    REQUIRE(queue_sample()==0);
 }
 
 static void test_android_default_names_wait_for_map_action(void) {
@@ -720,20 +722,20 @@ static void test_quick_feedback_fifo_and_fullmap(void) {
     dm_android_touch_event(0,0,q.x,q.y);
     REQUIRE(queue_sample()==0 && observed_idle==0); read_twice(s); REQUIRE(s[199]==1);
     test_clock_ns+=UINT64_C(2000000000);
-    REQUIRE(queue_sample()==0 && !labels_done); /* Holding manual labels must defer defaults. */
+    REQUIRE(queue_sample()==0 && !labels_done); /* A captured filter touch also defers the independent names default. */
     dm_android_touch_event(2,0,q.x,q.y);
-    REQUIRE(queue_sample()==DM_BTN_L && labels_done); read_twice(s); REQUIRE(s[199]==1);
-    REQUIRE(queue_sample()==0);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==1 && !labels_done); read_twice(s); REQUIRE(s[199]==1);
+    REQUIRE(queue_sample()==DM_BTN_L && labels_done); /* Filter request did not consume the names default. */
     test_clock_ns+=UINT64_C(150000000);
     read_twice(s); REQUIRE(s[199]==0);
-    REQUIRE(queue_sample()==0); /* Manual choice never gets reversed by the default L. */
+    REQUIRE(queue_sample()==0);
     quick_tap(0,0); quick_tap(0,0); quick_tap(1,1); quick_tap(2,2);
     REQUIRE(queue_sample()==DM_BTN_MINUS);
     REQUIRE(queue_sample()==0);
     REQUIRE(queue_sample()==DM_BTN_MINUS);
     REQUIRE(queue_sample()==0);
     REQUIRE(queue_sample()==0 && map_position_calls==1);
-    REQUIRE(queue_sample()==DM_BTN_L);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==2);
     REQUIRE(queue_sample()==0);
     REQUIRE(map_full_calls==0 && map_full==1 && tc.skill_set==0);
     REQUIRE(tc.lx==0 && tc.ly==0 && tc.rx==0 && tc.ry==0 && tc.joy_slot<0);
@@ -803,6 +805,27 @@ static void test_quick_visibility_and_native_sort_phases(void) {
     dm_android_touch_event(3,0,t.x,t.y); REQUIRE(queue_sample()==0);
     REQUIRE(product_cancel_calls==before_cancel+1 && dm_product_ui_sort(5,92)==-1);
 }
+static void test_filter_action_capture_and_scene_cancel(void) {
+    fixture(0); scene.game=1;
+    dm_tc_target q=quick_circle(2);
+    dm_android_touch_event(0,0,q.x,q.y);
+    dm_android_touch_event(1,0,q.x+q.r+2,q.y);
+    dm_android_touch_event(2,0,q.x,q.y);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==0 && !labels_done);
+    quick_tap(2,0); dm_android_touch_cancel_pending();
+    REQUIRE(queue_sample()==0 && loot_filter_requests==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_LOOT_FILTER); dm_android_touch_cancel_pending();
+    REQUIRE(queue_sample()==0 && loot_filter_requests==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_LOOT_FILTER);
+    dm_android_touch_uimsg("PanelManager","OpenPanel","PlayerInventoryExpansionLayout");
+    REQUIRE(queue_sample()==0 && loot_filter_requests==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_LOOT_FILTER); REQUIRE(queue_sample()==0 && loot_filter_requests==0);
+    dm_android_touch_uimsg("PanelManager","UnloadPanel","PlayerInventoryExpansionLayout");
+    q=quick_circle(2); quick_tap(2,0);
+    REQUIRE(queue_sample()==0 && loot_filter_requests==1 && !labels_done);
+    REQUIRE(tc.joy_slot<0 && !tc.world_tap_seq && !tc.mouse_click_seq);
+}
+
 static void test_quick_mainstream_geometry_and_margin_binding(void) {
     const float sizes[][2]={{667,375},{800,375},{2608.0f/3,1200.0f/3},{960,440},{1024,768}};
     for (unsigned n=0;n<sizeof sizes/sizeof sizes[0];++n) for (int above=0;above<2;++above) for (int large_margin=0;large_margin<2;++large_margin) {
@@ -817,7 +840,10 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             int o=DM_ANDROID_TOUCH_QUICK+i*5; dm_tc_target q=quick_circle(i);
             if (i>0) {
                 REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
-                REQUIRE(fabsf(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)-214*dm_tc_scale_for_size(width,height))<.01f);
+                float k=dm_tc_scale_for_size(width,height);
+                REQUIRE(q.r==tc.layout.target[DM_TC_SKILL1].r);
+                REQUIRE(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)<=200*k);
+                if (!above) REQUIRE(fabsf(hypotf(q.x-tc.layout.target[DM_TC_MAIN].x,q.y-tc.layout.target[DM_TC_MAIN].y)-186*k)<.01f);
             } else {
                 REQUIRE(b[o]>=a[o] && q.x<tc.layout.width*.5f && q.y<tc.layout.height*.25f);
             }
@@ -840,11 +866,13 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             REQUIRE(hypotf(q.x-tc.layout.joy_x,q.y-tc.layout.joy_y)>q.r+tc.layout.joy_radius+1);
             for (int j=i+1;j<3;++j) { dm_tc_target r=quick_circle(j); REQUIRE(hypotf(q.x-r.x,q.y-r.y)>q.r+r.r+1); }
             quick_tap(i,i);
-            uint64_t expected=i==0 ? DM_BTN_MINUS : i==2 ? DM_BTN_L : 0;
+            uint64_t expected=i==0 ? DM_BTN_MINUS : 0;
             REQUIRE(queue_sample()==expected && !tc.finger[i].active && tc.joy_slot<0);
             REQUIRE(queue_sample()==0);
         }
-        REQUIRE(map_position_calls==1);
+        REQUIRE(map_position_calls==1 && loot_filter_requests==1);
+        dm_tc_target first=quick_circle(1), second=quick_circle(2);
+        REQUIRE(hypotf(first.x-second.x,first.y-second.y)<64*dm_tc_scale_for_size(width,height));
         /* Default 48dp monitor offset leaves room for a 44dp phone target in
            the top strip. Tablet scaling falls back beside the panel. */
         dm_android_touch_obstructions(0,30,48,314,212); REQUIRE(queue_sample()==0);
@@ -855,10 +883,10 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
             REQUIRE(fabsf(top_map.x-(20+(large_margin?96:0)+26))<.001f);
             REQUIRE(top_map.y==26 && top_map.y+top_map.r==48);
         } else REQUIRE(top_map.x-top_map.r>=324 && fabsf(top_map.y-top_map.r-48)<.001f);
-        REQUIRE(fabsf(b[190]-b[195])>20 && fabsf(b[191]-b[196])>20);
-        printf("DETAIL quick_geometry size=%.0fx%.0f above=%d margin96=%d main=%.2f,%.2f quick=%.2f,%.2f;r=%.2f;dy=%.2f\n",
+        REQUIRE(fabsf(b[190]-b[195])>40 && fabsf(b[191]-b[196])>10);
+        printf("DETAIL quick_geometry size=%.3fx%.0f above=%d margin96=%d main=%.2f,%.2f map=%.2f,%.2f;r=%.2f position=%.2f,%.2f;r=%.2f filter=%.2f,%.2f;r=%.2f\n",
             sizes[n][0],sizes[n][1],above,large_margin,tc.layout.target[DM_TC_MAIN].x,tc.layout.target[DM_TC_MAIN].y,
-            b[185],b[186],b[187],b[191]-b[186]);
+            b[185],b[186],b[187],b[190],b[191],b[192],b[195],b[196],b[197]);
     }
 }
 
@@ -927,7 +955,7 @@ int main(void) {
     run_case("android_local_cancel_clears_pending_actions", test_android_local_cancel_clears_pending_actions);
     run_case("android_sort_only_current_supported_page", test_android_sort_only_current_supported_page);
     run_case("android_full_map_preserves_existing_controls", test_android_full_map_preserves_existing_controls);
-    run_case("android_item_names_default_and_manual", test_android_item_names_default_and_manual);
+    run_case("android_item_names_default_and_filter_independent", test_android_item_names_default_and_filter_independent);
     run_case("android_default_names_wait_for_map_action", test_android_default_names_wait_for_map_action);
     run_case("android_default_names_wait_for_loading_and_cursor", test_android_default_names_wait_for_loading_and_cursor);
     if (!getenv("DM_TEST_QUICK_INPUT_RED")) run_case("quick_snapshot_append", test_quick_snapshot_append);
@@ -935,6 +963,7 @@ int main(void) {
     run_case("quick_feedback_fifo_and_fullmap", test_quick_feedback_fifo_and_fullmap);
     run_case("quick_slide_up_and_system_cancels", test_quick_slide_up_and_system_cancels);
     run_case("quick_visibility_and_native_sort_phases", test_quick_visibility_and_native_sort_phases);
+    run_case("filter_action_capture_and_scene_cancel", test_filter_action_capture_and_scene_cancel);
     run_case("quick_mainstream_geometry_and_margin_binding", test_quick_mainstream_geometry_and_margin_binding);
     run_case("quick_monitor_obstructions_and_cancel", test_quick_monitor_obstructions_and_cancel);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);

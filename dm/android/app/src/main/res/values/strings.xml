@@ -6,12 +6,14 @@
     <string name="dmAndroidTouchRestore">Restore defaults</string>
     <string name="dmAndroidTouchSaveFailed">Could not save touch settings. Please try again.</string>
     <string name="dmAndroidMapVisibilityShort">Map</string>
-    <string name="dmAndroidMapPositionShort">Position</string>
+    <string name="dmAndroidMapPositionShort">Map position</string>
     <string name="dmAndroidTouchSettingsShort">Settings</string>
     <string name="dmAndroidMapVisibility">Show or hide map</string>
     <string name="dmAndroidMapPosition">Move map to left, center, or right</string>
     <string name="dmAndroidItemNamesShort">Items</string>
     <string name="dmAndroidItemNames">Show or hide ground item names</string>
+    <string name="dmAndroidLootFilterShort">Item filter</string>
+    <string name="dmAndroidLootFilter">Enable or disable the item filter</string>
     <string name="dmAndroidSortShort">Sort</string>
     <string name="dmAndroidSortBag">Sort inventory</string>
     <string name="dmAndroidSortPersonal">Sort this personal stash page</string>

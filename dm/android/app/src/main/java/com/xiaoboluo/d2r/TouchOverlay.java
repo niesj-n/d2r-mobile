@@ -66,6 +66,7 @@ public final class TouchOverlay extends View {
     private final float[] rawX = new float[16], rawY = new float[16];
     private final String[] gameLabels, menuLabels;
     private final String[] quickLabels;
+    private final String[][] quickLabelLines;
     private final File overlayRoot;
     private final HashMap<String,Bitmap> images=new HashMap<>(), art=new HashMap<>(), glyphs=new HashMap<>();
     private final HashMap<String,int[]> glowOffsets=new HashMap<>();
@@ -107,7 +108,13 @@ public final class TouchOverlay extends View {
         gameLabels = labels == null ? new String[15] : labels.clone();
         this.menuLabels = menuLabels == null ? new String[5] : menuLabels.clone();
         quickLabels = new String[] {context.getString(R.string.dmAndroidMapVisibilityShort),
-                context.getString(R.string.dmAndroidMapPositionShort), context.getString(R.string.dmAndroidItemNamesShort)};
+                context.getString(R.string.dmAndroidMapPositionShort), context.getString(R.string.dmAndroidLootFilterShort)};
+        quickLabelLines=new String[quickLabels.length][];
+        for (int i=0;i<quickLabels.length;++i) {
+            String value=quickLabels[i]; int split=value.indexOf(' ');
+            if (split<0 && value.codePointCount(0,value.length())==4) split=value.offsetByCodePoints(0,2);
+            quickLabelLines[i]=split>0 ? new String[]{value.substring(0,split),value.substring(split).trim()} : new String[]{value};
+        }
         lifeFormat=context.getString(R.string.dmHudLife); manaFormat=context.getString(R.string.dmHudMana);
         levelFormat=context.getString(R.string.dmAndroidHudLevel); cancelLabel=context.getString(R.string.dmTcCancel);
         overlayRoot=new File(context.getFilesDir(),"dm/overlay");
@@ -375,6 +382,22 @@ public final class TouchOverlay extends View {
             bitmapPaint.setAlpha(255);
         } else caption(canvas,quickLabels[0],x,y-6,10,held?1:.84f);
     }
+    private void quickSkillControl(Canvas canvas,float x,float y,float r,boolean held,String[] lines) {
+        button(canvas,x,y,r,held,false,false);
+        paint.setTypeface(Typeface.DEFAULT_BOLD);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setColor(held?0xffffffff:0xffeeeeee);
+        float size=r*.45f; paint.setTextSize(size);
+        float widest=0;
+        for (String line:lines) widest=Math.max(widest,paint.measureText(line));
+        float lineHeight=paint.descent()-paint.ascent();
+        float fit=Math.min(1,Math.min(r*1.35f/Math.max(1,widest),r*1.25f/(lines.length*lineHeight)));
+        paint.setTextSize(size*fit);
+        lineHeight=paint.descent()-paint.ascent();
+        float baseline=y-lines.length*lineHeight*.5f-paint.ascent();
+        for (String line:lines) { canvas.drawText(line,x,baseline,paint); baseline+=lineHeight; }
+        paint.setTypeface(null);
+    }
     // skillImage：同帧位的银色剪影（无剪影图时退回原版图集、四边各裁 8%），保留明暗、统一为银灰。
     // skillImage: the silver silhouette at the same frame (without it, the original atlas trimmed 8% on each side), keeping the shading, all silver grey.
     private Bitmap glyph(int atlas,int sx,int sy,int dm,int sh) {
@@ -534,7 +557,7 @@ public final class TouchOverlay extends View {
             if (navigation || layout[p+3]==0 || layout[p+2]<=0) continue;
             float r=layout[p+2];
             if (i==0) mapControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0);
-            else circleControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i],Math.min(10f,r*.48f),false);
+            else quickSkillControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabelLines[i]);
         }
         // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
         int jp=4+12*5;
