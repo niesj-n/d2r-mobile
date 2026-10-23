@@ -93,6 +93,37 @@ static void fe_event_locked(const touch_event *e) {
     if (e->phase == 2) fe_slot = -1;
 }
 
+static void avoid_bottom_hud_locked(void) {
+    dm_tc_layout *l=&tc.layout;
+    float k=dm_tc_scale_for_size(l->width,l->height),u=l->height/1320.f,gap=8*k;
+    /* Same reference as imported hud_v4_ui/ui.json: base754..2016 around
+     * center1434, base top1134, vital text baseline1142. Include text/shadow. */
+    float left=l->width*.5f-680*u,right=l->width*.5f+582*u,top=1100*u;
+    float need=0,headroom=l->height;
+    for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
+        dm_tc_target t=l->target[i];
+        if(t.x+t.r+gap>left && t.x-t.r-gap<right)
+            need=fmaxf(need,t.y+t.r+gap-top);
+    }
+    if(need<=0) return;
+    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i)
+        headroom=fminf(headroom,l->target[i].y-l->target[i].r-safe_top-4*k);
+    headroom=fminf(headroom,l->swap.y-l->swap.r-safe_top-4*k);
+    for(int i=1;i<DM_ANDROID_TOUCH_QUICK_COUNT;++i) {
+        dm_tc_target t=quick_circle(i);
+        headroom=fminf(headroom,t.y-t.r-safe_top-4*k);
+    }
+    float lift=fminf(need,fmaxf(0,headroom));
+    for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i) l->target[i].y-=lift;
+    l->swap.y-=lift;
+    /* Limited vertical room must not push the upper row off screen. Finish
+     * clearing only a lower button that still intersects the bottom HUD. */
+    for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
+        dm_tc_target *t=&l->target[i];
+        if(t->x+t->r+gap>left && t->x-t->r-gap<right)
+            t->y=fminf(t->y,top-gap-t->r);
+    }
+}
 static void space_combat_controls_locked(void) {
     dm_tc_layout *l=&tc.layout;
     if (l->height<340) return; /* Compact windows retain their fitted fan. */
@@ -117,6 +148,7 @@ static void space_combat_controls_locked(void) {
         l->swap.x=main.x+px*cosf(.46f)+py*sinf(.46f);
         l->swap.y=main.y-px*sinf(.46f)+py*cosf(.46f);
     }
+    avoid_bottom_hud_locked();
     float first=l->swap.x-l->swap.r;
     for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i) first=fminf(first,l->target[i].x-l->target[i].r);
     l->joy_max_x=fmaxf(l->joy_min_x,fminf(l->joy_max_x,first-l->joy_radius-2*k));

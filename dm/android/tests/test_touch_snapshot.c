@@ -695,12 +695,12 @@ static void test_android_default_names_wait_for_loading_and_cursor(void) {
 }
 
 
-/* Expected appended ABI, intentionally independent of the new production enum
- * so the unchanged 185-float bridge can execute the RED regression. */
+/* Quick-control prefix remains stable while the full drawing buffer includes
+ * the current aim/cancel extension. Never size this destination to an old ABI. */
 static void test_quick_snapshot_append(void) {
     fixture(0);
     dm_android_touch_uimsg("PanelManager","UnloadPanel","LoadScreenPanel");
-    float s[200]={0}; dm_android_touch_layout(s);
+    float s[DM_ANDROID_TOUCH_DRAW_FLOATS]={0}; dm_android_touch_layout(s);
     REQUIRE(s[4+DM_TC_MAP*5+3]==0); /* Only the appended map toggle is drawn in gameplay. */
     REQUIRE(s[188]==1); REQUIRE(s[193]==1); REQUIRE(s[198]==1);
     REQUIRE(s[185]<tc.layout.width*.5f && s[186]<tc.layout.height*.25f);
@@ -839,12 +839,14 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
         dm_tc_enable_targets(&tc,tc.enabled_targets & ~(1u<<DM_TC_MAP));
         float a[DM_ANDROID_TOUCH_DRAW_FLOATS], b[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(a);
         dm_tc_target old_main=tc.layout.target[DM_TC_MAIN];
+        float old_portal_y=tc.layout.target[DM_TC_PORTAL].y;
         dm_android_touch_margins(large_margin?96:0,large_margin?96:0); REQUIRE(queue_sample()==0); read_twice(b);
         float shift=tc.layout.target[DM_TC_MAIN].x-old_main.x;
         for (int i=0;i<3;++i) {
             int o=DM_ANDROID_TOUCH_QUICK+i*5; dm_tc_target q=quick_circle(i);
             if (i>0) {
-                REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && b[o+1]==a[o+1] && b[o+2]==a[o+2]);
+                float hud_lift=tc.layout.target[DM_TC_PORTAL].y-old_portal_y;
+                REQUIRE(fabsf((b[o]-a[o])-shift)<.001f && fabsf(b[o+1]-a[o+1]-hud_lift)<.001f && b[o+2]==a[o+2]);
                 float k=dm_tc_scale_for_size(width,height);
                 REQUIRE(q.r==18*k && q.r<tc.layout.target[DM_TC_SKILL1].r);
                 REQUIRE(q.x>=tc.layout.target[DM_TC_MAIN].x-100*k);
@@ -900,7 +902,7 @@ static void test_quick_mainstream_geometry_and_margin_binding(void) {
 static void test_quick_monitor_obstructions_and_cancel(void) {
     fixture(0); scene.game=1;
     dm_android_touch_resize(2608.0f/3,400,20,24,16); REQUIRE(queue_sample()==0);
-    float before[200], after[200]; read_twice(before);
+    float before[DM_ANDROID_TOUCH_DRAW_FLOATS], after[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(before);
     /* Actual monitor dimensions in dp, including safe top and its 48dp offset. */
     dm_android_touch_obstructions(14,30,62,314,226); REQUIRE(queue_sample()==0); read_twice(after);
     dm_tc_target q=quick_circle(0);

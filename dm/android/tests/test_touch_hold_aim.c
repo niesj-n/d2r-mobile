@@ -147,8 +147,10 @@ static void test_circle_clear_mainstream_layouts(void) {
         REQUIRE(c.y<anchor.y-100*k && c.x>anchor.x-150*k);
         REQUIRE(hypotf(c.x-upper.x,c.y-upper.y)<130*k);
         REQUIRE(tc.layout.target[DM_TC_SKILL4].x-tc.layout.target[DM_TC_SKILL3].x>=79.9f*k);
-        REQUIRE(hypotf(tc.layout.target[DM_TC_SKILL2].x-tc.layout.target[DM_TC_SKILL1].x,
-                       tc.layout.target[DM_TC_SKILL2].y-tc.layout.target[DM_TC_SKILL1].y)>79*k);
+        float lower_pitch=hypotf(tc.layout.target[DM_TC_SKILL2].x-tc.layout.target[DM_TC_SKILL1].x,
+                                 tc.layout.target[DM_TC_SKILL2].y-tc.layout.target[DM_TC_SKILL1].y);
+        REQUIRE(lower_pitch>59.9f*k); /* Full sockets plus an8dp gap. */
+        if(n==2) REQUIRE(lower_pitch>79*k); /* Actual phone retains the wide fan. */
         for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
             dm_tc_target t=tc.layout.target[i];
             /* Actual enlarged ring + rotating arrow's outer point. */
@@ -197,6 +199,32 @@ static void test_cancel_follows_right_control_margin(void) {
     REQUIRE(fabsf(after.x-before.x-(main_after.x-main_before.x))<.001f);
     REQUIRE(fabsf(after.x-before.x+40)<.001f && after.y==before.y);
 }
+static void test_skill_buttons_clear_actual_bottom_hud(void) {
+    const float sizes[][2]={{667,375},{800,375},{2608.f/3,400},{960,440},{1024,768}};
+    const int margins[]={0,28,56,72,96};
+    for(unsigned n=0;n<sizeof sizes/sizeof sizes[0];++n) for(int above=0;above<2;++above)
+    for(unsigned m=0;m<sizeof margins/sizeof margins[0];++m) {
+        gameplay_fixture(); observed_swap_above=above;
+        dm_android_touch_tablet(n==4); dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16);
+        dm_android_touch_margins(12,margins[m]); REQUIRE(hold_frame(.1)==0);
+        float u=height/1320.f,k=dm_tc_scale_for_size(width,height);
+        /* Imported v2.5 ui.json: base x754..2016 about center1434,
+         * base top1134, vital baseline1142. Reserve text/shadow from1100. */
+        float left=width*.5f-680*u,right=width*.5f+582*u,top=1100*u;
+        for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
+            dm_tc_target t=tc.layout.target[i];
+            REQUIRE(t.x+t.r+8*k<=left || t.x-t.r-8*k>=right || t.y+t.r+8*k<=top+.001f);
+            for(int j=i+1;j<=DM_TC_PORTAL;++j) {
+                dm_tc_target other=tc.layout.target[j];
+                REQUIRE(hypotf(t.x-other.x,t.y-other.y)>=t.r+other.r+8*k);
+            }
+        }
+        dm_tc_target lower=tc.layout.target[DM_TC_SKILL1];
+        dm_android_touch_event(0,0,lower.x,lower.y); hold_frame(.1);
+        REQUIRE(hold_frame(.1)==DM_BTN_B);
+        dm_android_touch_event(3,0,lower.x,lower.y); REQUIRE(hold_frame(.1)==0);
+    }
+}
 int main(void) {
     run_case("hold_feedback_snapshot_and_release_stop",test_hold_visual_snapshot);
     run_case("all_five_slots_keep_original_hold_and_II_lead",test_five_slots_keep_shared_hold_timing);
@@ -209,6 +237,7 @@ int main(void) {
     run_case("cancel_circle_clear_mainstream_sizes_margins_profiles",test_circle_clear_mainstream_layouts);
     run_case("circle_cached_until_actual_layout_cancel",test_circle_cache_and_hidden_pending_snapshot);
     run_case("cancel_follows_right_control_margin",test_cancel_follows_right_control_margin);
+    run_case("skill_buttons_clear_actual_bottom_hud",test_skill_buttons_clear_actual_bottom_hud);
     printf("RESULT PASS hold cases=%u assertions=%u\n",cases,checks);
     return 0;
 }
