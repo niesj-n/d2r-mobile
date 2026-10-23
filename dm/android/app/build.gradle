@@ -9,6 +9,14 @@
 plugins { id 'com.android.application' }
 
 def prebuilt = project.findProperty('dmPrebuiltJni')
+def importDirectory = project.findProperty('dmImportDirectory') ?: 'S2X/D2R Mobile'
+if (!(importDirectory in ['S2X/D2R Mobile', 'S2X/D2R Niesj'])) {
+    throw new GradleException('dmImportDirectory must be S2X/D2R Mobile or S2X/D2R Niesj')
+}
+def appLabel = project.findProperty('dmAppLabel') ?: '@string/dmAndroidName'
+if (project.findProperty('dmAppLabel') && !(appLabel ==~ /[\p{L}\p{N} ._-]{1,40}/)) {
+    throw new GradleException('dmAppLabel must be 1-40 safe label characters')
+}
 
 // 启动文案取自统一中英表，生成目录只在 build 下，不入库。
 // Startup text comes from the shared table; generated resources stay under build.
@@ -37,6 +45,7 @@ android {
         // 产物代号（dm/PRODUCT 首行）：导入包的 pack_info.txt 要与它相同（DmActivity.ensureImported）
         // Product code (first line of dm/PRODUCT): an import pack's pack_info.txt must match it (DmActivity.ensureImported)
         buildConfigField 'String', 'DM_PRODUCT', "\"${file('../../PRODUCT').readLines()[0].trim()}\""
+        buildConfigField 'String', 'DM_IMPORT_DIRECTORY', "\"${importDirectory}\""
         minSdk 31
         targetSdk 36
         // 跟发布版本走：versionName = 发布版本号，versionCode = 主 × 10000 + 次 × 100 + 修订（2.0.0 → 20000），只增不减，旧版才能被覆盖升级
@@ -55,6 +64,7 @@ android {
     sourceSets { main { res.srcDir(startupStrings.get().asFile); res.srcDir(launcherIcon.get().asFile) } }
     packaging { jniLibs { useLegacyPackaging false; keepDebugSymbols += ['**/*.so'] } }
     buildFeatures { buildConfig true }
+    defaultConfig { manifestPlaceholders = [dmAppLabel: appLabel] }
     // 正式版签名：钥匙不进仓库，路径与密码从环境变量来（tools/shell_apk.sh release 读本机 ~/.config/dm-android/release.env）；没设就不签
     // Release signing: the key never goes into the repository; path and password come from the environment (tools/shell_apk.sh release reads the
     // local ~/.config/dm-android/release.env); unsigned when not set
