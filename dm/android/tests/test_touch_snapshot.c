@@ -1083,6 +1083,8 @@ static void test_info_publication_lifecycle(void) {
     dm_android_touch_cancel_pending();
     REQUIRE(!info_rift_active && !info_map_active && !info_minimap);
     queue_sample(); REQUIRE(info_rift_active && info_map_active);
+    observed_ingame=0; queue_sample(); REQUIRE(!info_rift_active && !info_map_active && !info_minimap);
+    observed_ingame=1; queue_sample(); REQUIRE(info_rift_active && info_map_active);
     dm_android_touch_focus(0); REQUIRE(!info_rift_active && !info_map_active);
     queue_sample(); REQUIRE(!info_rift_active && !info_map_active);
     dm_android_touch_focus(1); queue_sample(); REQUIRE(info_rift_active && info_map_active);

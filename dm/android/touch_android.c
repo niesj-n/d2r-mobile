@@ -657,10 +657,11 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     /* Guest sampling owns map/locale reads. Rift plain fields are sampled only
      * by the server hook; this path publishes an activity gate and atomic map
      * bounds, keeping all JNI reads independent from guest memory. */
-    dm_android_rift_info_set_active(gameplay);
+    int info_active=gameplay && dm_uiscreen_ingame();
+    dm_android_rift_info_set_active(info_active);
     float mini[4], cell;
-    dm_android_rift_info_set_minimap(gameplay && dm_ui_map_geom(&cell)==1 && dm_ui_minimap_rect(mini) ? mini : NULL);
-    dm_android_map_goal_publish(gameplay);
+    dm_android_rift_info_set_minimap(info_active && dm_ui_map_geom(&cell)==1 && dm_ui_minimap_rect(mini) ? mini : NULL);
+    dm_android_map_goal_publish(info_active);
     if (!*lx && !*ly) { *lx = tc.lx; *ly = tc.ly; }
     if (!*rx && !*ry) { *rx = tc.rx; *ry = tc.ry; }
     pthread_mutex_unlock(&lock);
