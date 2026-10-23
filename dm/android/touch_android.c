@@ -102,8 +102,9 @@ static void avoid_bottom_hud_locked(void) {
     float need=0,headroom=l->height;
     for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
         dm_tc_target t=l->target[i];
-        if(t.x+t.r+gap>left && t.x-t.r-gap<right)
-            need=fmaxf(need,t.y+t.r+gap-top);
+        float visual=t.r+25*k; /* 18k thumb travel; 19k ring +6k arrow tip. */
+        if(t.x+visual+gap>left && t.x-visual-gap<right)
+            need=fmaxf(need,t.y+visual+gap-top);
     }
     if(need<=0) return;
     for(int i=DM_TC_MAIN;i<=DM_TC_PORTAL;++i)
@@ -120,9 +121,16 @@ static void avoid_bottom_hud_locked(void) {
      * clearing only a lower button that still intersects the bottom HUD. */
     for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
         dm_tc_target *t=&l->target[i];
-        if(t->x+t->r+gap>left && t->x-t->r-gap<right)
-            t->y=fminf(t->y,top-gap-t->r);
+        float visual=t->r+25*k;
+        if(t->x+visual+gap>left && t->x-visual-gap<right)
+            t->y=fminf(t->y,top-gap-visual);
     }
+    /* On shorter landscape views, lifting the lowest skill can approach the
+     * next one. Separate that pair horizontally instead of overlapping it. */
+    dm_tc_target *lower=&l->target[DM_TC_SKILL1],upper=l->target[DM_TC_SKILL2];
+    float sep=lower->r+upper.r+gap,dy=lower->y-upper.y;
+    if(hypotf(lower->x-upper.x,dy)<sep && fabsf(dy)<sep)
+        lower->x=fminf(lower->x,upper.x-sqrtf(sep*sep-dy*dy)-.5f*k);
 }
 static void space_combat_controls_locked(void) {
     dm_tc_layout *l=&tc.layout;

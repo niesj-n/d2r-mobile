@@ -50,11 +50,11 @@ static dm_tc_target aim_feedback_circle_compute(void) {
     float k=dm_tc_scale_for_size(width,height), r=24*k;
     float min_x=safe_left+r+8*k, max_x=width-safe_right-r-8*k;
     float min_y=safe_top+r+8*k, max_y=height-safe_bottom-r-8*k;
-    const dm_tc_target main=tc.layout.target[DM_TC_MAIN];
-    float want_x=main.x-108*k, want_y=main.y-180*k;
+    const dm_tc_target upper=tc.layout.target[DM_TC_SKILL3];
+    float want_x=upper.x-64*k, want_y=upper.y-68*k;
     dm_tc_target best={fminf(max_x,fmaxf(min_x,want_x)),fminf(max_y,fmaxf(min_y,want_y)),r,0};
     float score=INFINITY;
-    /* Stay close to the upper skill row. The main anchor already includes
+    /* Stay close to the upper skill row. Its actual anchor already includes
      * control margins, so cancellation follows the user's distance setting. */
     for(int yi=0;yi<15;++yi) for(int xi=0;xi<9;++xi) {
         float x=fminf(max_x,fmaxf(min_x,want_x+(xi-4)*28*k));

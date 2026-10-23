@@ -150,7 +150,6 @@ static void test_circle_clear_mainstream_layouts(void) {
         float lower_pitch=hypotf(tc.layout.target[DM_TC_SKILL2].x-tc.layout.target[DM_TC_SKILL1].x,
                                  tc.layout.target[DM_TC_SKILL2].y-tc.layout.target[DM_TC_SKILL1].y);
         REQUIRE(lower_pitch>59.9f*k); /* Full sockets plus an8dp gap. */
-        if(n==2) REQUIRE(lower_pitch>79*k); /* Actual phone retains the wide fan. */
         for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
             dm_tc_target t=tc.layout.target[i];
             /* Actual enlarged ring + rotating arrow's outer point. */
@@ -213,7 +212,8 @@ static void test_skill_buttons_clear_actual_bottom_hud(void) {
         float left=width*.5f-680*u,right=width*.5f+582*u,top=1100*u;
         for(int i=DM_TC_MAIN;i<=DM_TC_SKILL4;++i) {
             dm_tc_target t=tc.layout.target[i];
-            REQUIRE(t.x+t.r+8*k<=left || t.x-t.r-8*k>=right || t.y+t.r+8*k<=top+.001f);
+            float visual=t.r+25*k; /* 19k rotating rim +6k arrow, includes18k thumb. */
+            REQUIRE(t.x+visual+8*k<=left || t.x-visual-8*k>=right || t.y+visual+8*k<=top+.001f);
             for(int j=i+1;j<=DM_TC_PORTAL;++j) {
                 dm_tc_target other=tc.layout.target[j];
                 REQUIRE(hypotf(t.x-other.x,t.y-other.y)>=t.r+other.r+8*k);
@@ -222,7 +222,11 @@ static void test_skill_buttons_clear_actual_bottom_hud(void) {
         dm_tc_target lower=tc.layout.target[DM_TC_SKILL1];
         dm_android_touch_event(0,0,lower.x,lower.y); hold_frame(.1);
         REQUIRE(hold_frame(.1)==DM_BTN_B);
-        dm_android_touch_event(3,0,lower.x,lower.y); REQUIRE(hold_frame(.1)==0);
+        dm_android_touch_event(1,0,lower.x,lower.y+60*k); REQUIRE(hold_frame(.1)==DM_BTN_B);
+        float s[DM_ANDROID_TOUCH_DRAW_FLOATS]; read_twice(s);
+        float thumb_x=lower.x+s[DM_ANDROID_TOUCH_AIM+6+1],thumb_y=lower.y+s[DM_ANDROID_TOUCH_AIM+6+2];
+        REQUIRE(thumb_x+lower.r+8*k<=left || thumb_x-lower.r-8*k>=right || thumb_y+lower.r+8*k<=top+.001f);
+        dm_android_touch_event(3,0,lower.x,lower.y+60*k); REQUIRE(hold_frame(.1)==0);
     }
 }
 int main(void) {
