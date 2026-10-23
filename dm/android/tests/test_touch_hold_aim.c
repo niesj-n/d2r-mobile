@@ -143,7 +143,9 @@ static void test_circle_clear_mainstream_layouts(void) {
         dm_android_touch_tablet(n==4); dm_android_touch_resize(sizes[n][0],sizes[n][1],20,24,16);
         dm_android_touch_margins(margin?96:0,margin?96:0); REQUIRE(hold_frame(.1)==0);
         dm_tc_target c=aim_feedback_circle(); float k=dm_tc_scale_for_size(width,height);
-        REQUIRE(c.x>width*.75f && c.y<height*.25f);
+        const dm_tc_target anchor=tc.layout.target[DM_TC_MAIN],upper=tc.layout.target[DM_TC_SKILL3];
+        REQUIRE(c.y<anchor.y-100*k && c.x>anchor.x-150*k);
+        REQUIRE(hypotf(c.x-upper.x,c.y-upper.y)<130*k);
         REQUIRE(tc.layout.target[DM_TC_SKILL4].x-tc.layout.target[DM_TC_SKILL3].x>=79.9f*k);
         REQUIRE(hypotf(tc.layout.target[DM_TC_SKILL2].x-tc.layout.target[DM_TC_SKILL1].x,
                        tc.layout.target[DM_TC_SKILL2].y-tc.layout.target[DM_TC_SKILL1].y)>79*k);
@@ -185,6 +187,16 @@ static void test_circle_cache_and_hidden_pending_snapshot(void) {
     dm_tc_target c=aim_feedback_circle();
     REQUIRE(aim_feedback_circle_clear(c.x,c.y,c.r,dm_tc_scale_for_size(width,height)));
 }
+static void test_cancel_follows_right_control_margin(void) {
+    gameplay_fixture();
+    dm_android_touch_resize(2608.f/3,400,20,24,16); REQUIRE(hold_frame(.1)==0);
+    dm_android_touch_margins(12,12); REQUIRE(hold_frame(.1)==0);
+    dm_tc_target before=aim_feedback_circle(),main_before=tc.layout.target[DM_TC_MAIN];
+    dm_android_touch_margins(12,52); REQUIRE(hold_frame(.1)==0);
+    dm_tc_target after=aim_feedback_circle(),main_after=tc.layout.target[DM_TC_MAIN];
+    REQUIRE(fabsf(after.x-before.x-(main_after.x-main_before.x))<.001f);
+    REQUIRE(fabsf(after.x-before.x+40)<.001f && after.y==before.y);
+}
 int main(void) {
     run_case("hold_feedback_snapshot_and_release_stop",test_hold_visual_snapshot);
     run_case("all_five_slots_keep_original_hold_and_II_lead",test_five_slots_keep_shared_hold_timing);
@@ -196,6 +208,7 @@ int main(void) {
     run_case("cancelled_feedback_clears_on_lifecycle",test_feedback_cancel_lifecycle);
     run_case("cancel_circle_clear_mainstream_sizes_margins_profiles",test_circle_clear_mainstream_layouts);
     run_case("circle_cached_until_actual_layout_cancel",test_circle_cache_and_hidden_pending_snapshot);
+    run_case("cancel_follows_right_control_margin",test_cancel_follows_right_control_margin);
     printf("RESULT PASS hold cases=%u assertions=%u\n",cases,checks);
     return 0;
 }
