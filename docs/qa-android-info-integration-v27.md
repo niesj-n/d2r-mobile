@@ -17,7 +17,7 @@ bounds and cutout insets in pixels. Existing control snapshots remain in dp.
 Offline evidence lives in original-product-v27-20261024:
 
 - cursor/touch-info-red.log: routing test fails before integration.
-- cursor/touch-info-green.log: 42 cases, 24037 assertions, including activity,
+- cursor/touch-info-green.log: 42 cases, 24039 assertions, including activity,
   full-map, cancellation, focus, navigation and frontend publication gates.
 - cursor/hold-info.log: 13 cases, 25855 assertions; accepted geometry and held
   casting/cancel regressions remain green.

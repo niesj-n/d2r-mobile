@@ -13,7 +13,7 @@ not claim to reduce or fix that stall. Reviewed original upstream reference:
 - Cache, shader and slow-PSO categories each retain the last64 rows, at most767 ASCII
   bytes each. Control/non-ASCII bytes become underscores. Namespace, startup cache
   load result and startup warm-list summary have three separate pinned slots so
-  subsequent saves cannot evict them. Fixed storage is about151KiB. Sequence numbers
+  subsequent saves cannot evict them. Fixed storage is about148KiB. Sequence numbers
   preserve cross-category ordering; category overwrite and contention counts state
   loss explicitly. A160KiB buffer fits every maximum-size row plus headers.
 - The existing `dm-diagnostics-prepare` Java worker calls
@@ -49,8 +49,9 @@ indexing is capped at4096 records, with a fixed4KiB phase array and at most4096
 small index entries referencing existing records. Beyond that cap, unindexed known
 records report `listed=-1`; rendering and warm-list loading remain unchanged.
 
-Warm snapshots/phase changes use the existing warm mutex. Driver calls, formatting
-and log callbacks occur outside that mutex. Extra work occurs on startup, warm
+Warm snapshots/phase changes and fixed-size shader identity copies use the
+existing warm mutex. Driver calls, diagnostic record formatting and log callbacks
+occur outside that mutex. Extra work occurs on startup, warm
 worker transitions, or actual PSO misses; existing hits and per-draw fast paths are
 unchanged. The exporter can briefly own the ring lock while formatting; producers
 try once and drop instead of waiting. No new renderer disk I/O or fsync is added.
