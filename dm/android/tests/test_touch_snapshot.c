@@ -545,6 +545,26 @@ static void test_android_local_cancel_clears_pending_actions(void) {
     REQUIRE(queue_sample()==0 && map_position_calls==2);
 }
 
+
+static void test_android_full_map_preserves_existing_controls(void) {
+    fixture(0); scene.game=1; map_full=1;
+    dm_tc_target swap=tc.layout.swap;
+    REQUIRE(dm_tc_hit(&tc.layout,swap.x,swap.y)==DM_TC_SWAP);
+    dm_android_touch_event(0,0,swap.x,swap.y); queue_sample();
+    test_clock_ns+=UINT64_C(60000000);
+    dm_android_touch_event(2,0,swap.x,swap.y); queue_sample();
+    REQUIRE(tc.skill_set==1);
+    REQUIRE(map_full_calls==0 && map_position_calls==0 && map_absolute==-1);
+
+    fixture(0); scene.game=1; map_full=1;
+    float x=width*.5f,y=height*.2f;
+    REQUIRE(dm_tc_hit(&tc.layout,x,y)==DM_TC_NONE);
+    dm_android_touch_event(0,0,x,y); queue_sample();
+    test_clock_ns+=UINT64_C(60000000);
+    dm_android_touch_event(2,0,x,y); queue_sample();
+    REQUIRE(map_full_calls==1 && map_absolute==0);
+}
+
 static void run_case(const char *name, void (*body)(void)) {
     case_name = name; body(); ++cases; printf("PASS %s\n", name);
 }
@@ -573,6 +593,7 @@ int main(void) {
     run_case("android_map_actions_and_mode_gate", test_android_map_actions_and_mode_gate);
     run_case("android_gameplay_visibility_gate", test_android_gameplay_visibility_gate);
     run_case("android_local_cancel_clears_pending_actions", test_android_local_cancel_clears_pending_actions);
+    run_case("android_full_map_preserves_existing_controls", test_android_full_map_preserves_existing_controls);
     printf("RESULT PASS cases=%u assertions=%u; game_quick_taps_10_of_10=NOT_TESTED\n", cases, checks);
     return 0;
 }
