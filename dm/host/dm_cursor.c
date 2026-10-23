@@ -1913,7 +1913,16 @@ static void ui_bind_pump(uint64_t root, uint64_t fr) {
 // Changing only the config value without calling the callback leaves the picture unchanged. Here the callback is called directly: pass 0 to switch to fullscreen, pass the config value to switch back (left / right as the player chose on the options page); the config object itself is untouched, so nothing is persisted and the next run follows the player's setting.
 // The controller has no key for switching this mode (the map key − only opens / closes).
 static _Atomic int g_map_req = -1, g_map_full_now, g_map_center_req;
+enum { MAP_REQ_TOGGLE = 2 };
 void dm_ui_map_full(int on) { atomic_store(&g_map_req, on != 0); }
+void dm_ui_map_toggle(void) {
+    int pending = atomic_load(&g_map_req);
+    for (;;) {
+        // Preserve relative tap parity until the guest thread observes the actual map state.
+        int next = pending < 0 ? MAP_REQ_TOGGLE : pending == MAP_REQ_TOGGLE ? -1 : !pending;
+        if (atomic_compare_exchange_weak(&g_map_req, &pending, next)) return;
+    }
+}
 int dm_ui_map_is_full(void) { return atomic_load(&g_map_full_now); }
 void dm_ui_map_recenter(void) { atomic_store(&g_map_center_req, 1); }
 // 真全屏局内，全屏地图的线条要盖在世界上：游戏把地图中心放在「屏幕高的一半」（它读到的是我们写的 16:9 界面高），画出来在 界面矩形 y + 界面高 ÷ 2；
@@ -1980,6 +1989,7 @@ static void ui_map_pump(module_t *m) {
 #endif
     }
     int r = atomic_exchange(&g_map_req, -1);
+    if (r == MAP_REQ_TOGGLE) r = mini != 0;
 #if defined(__ANDROID__)
     static int last_mini = 2;
     if (cfg == 1 || cfg == 2) last_mini = cfg;

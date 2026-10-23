@@ -113,6 +113,8 @@ uint32_t dm_ui_hit_id(void);   /* 最近一次命中的加点类按钮：属性�
 int dm_ui_bind_active(void); uint64_t dm_ui_auto_release(void);   /* 取手柄处用：此刻要从玩家输入里松开的键 | Used where the controller is read: the keys to release from the player's input right now */ int dm_ui_bind_skill_hit(float *nx, float *ny);   /* 最近一次命中（吸附后）落在加点类按钮上：1 = 技能树的技能图标，2 = 属性页的「+」；带归一化坐标 | The most recent hit (after snapping) landed on a point-spending button: 1 = a skill icon in the skill tree, 2 = a '+' on the attributes page; comes with normalized coordinates */
 void dm_ui_bind_cancel(void);
 void dm_ui_map_full(int on);
+/* Relative action remains ordered with pending absolute changes until the guest pump. */
+void dm_ui_map_toggle(void);
 int dm_ui_map_is_full(void);
 /* Android user action; consumed on the guest thread, never changes saved map options. */
 void dm_ui_map_recenter(void);

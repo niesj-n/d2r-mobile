@@ -47,6 +47,11 @@ static int failures;
 #define CHECK(c) do { if(!(c)) { fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#c);failures++; } } while(0)
 '''
 CASES = r'''
+#if HAVE_TOGGLE
+#define QUEUE_TOGGLE() dm_ui_map_toggle()
+#else
+#define QUEUE_TOGGLE() dm_ui_map_full(!dm_ui_map_is_full())
+#endif
 int main(int argc,char **argv) {
     if(argc!=2)return 2;
     mod.base=calloc(1,0x2f05460);if(!mod.base)return 3;
@@ -79,6 +84,22 @@ int main(int argc,char **argv) {
         *cfg=2;*mini=1;in_game=0;dm_ui_map_full(1);ui_map_pump(&mod);
         CHECK(callback_count==0);CHECK(!dm_ui_map_is_full());
         in_game=1;ui_map_pump(&mod);CHECK(callback_count==0);CHECK(*mini==1);
+        break;
+    case 5:
+        *cfg=2;*mini=1;ui_map_pump(&mod);
+        QUEUE_TOGGLE();QUEUE_TOGGLE();ui_map_pump(&mod);
+        CHECK(*mini==1);CHECK(callback_count==0);
+        QUEUE_TOGGLE();QUEUE_TOGGLE();QUEUE_TOGGLE();ui_map_pump(&mod);
+        CHECK(*mini==0);CHECK(callback_count==1);CHECK(*cfg==2);
+        break;
+    case 6:
+        *cfg=2;*mini=1;ui_map_pump(&mod);
+        QUEUE_TOGGLE();dm_ui_map_full(1);ui_map_pump(&mod);
+        CHECK(*mini==0);CHECK(callback_count==1);
+        dm_ui_map_full(0);QUEUE_TOGGLE();ui_map_pump(&mod);
+        CHECK(*mini==0);CHECK(callback_count==1);
+        QUEUE_TOGGLE();in_game=0;ui_map_pump(&mod);
+        in_game=1;ui_map_pump(&mod);CHECK(*mini==0);CHECK(callback_count==1);
         break;
     case 4:
         *cfg=0;*mini=0;*sx=31;*sy=19;
@@ -116,7 +137,7 @@ class AndroidMapControls(unittest.TestCase):
         cls.temp=tempfile.TemporaryDirectory()
         folder=Path(cls.temp.name)
         src=folder/'map_controls.c';cls.exe=folder/('map_controls.exe' if os.name=='nt' else 'map_controls')
-        src.write_text(PRELUDE+'\n#define HAVE_RECENTER '+str(int('void dm_ui_map_recenter(void)' in block))+'\n'+block+CASES,encoding='utf-8')
+        src.write_text(PRELUDE+'\n#define HAVE_RECENTER '+str(int('void dm_ui_map_recenter(void)' in block))+'\n#define HAVE_TOGGLE '+str(int('void dm_ui_map_toggle(void)' in block))+'\n'+block+CASES,encoding='utf-8')
         command=[cc]
         if Path(cc).stem=='zig':
             command+=['cc']
@@ -136,5 +157,7 @@ class AndroidMapControls(unittest.TestCase):
     def test_right_minimap_returns_without_rewriting_saved_option(self):self.check_case(2)
     def test_outside_game_requests_are_discarded(self):self.check_case(3)
     def test_recenter_is_explicit_and_keeps_world_alignment(self):self.check_case(4)
+    def test_fast_toggles_use_pending_state_before_guest_pump(self):self.check_case(5)
+    def test_absolute_requests_and_queued_toggles_keep_order(self):self.check_case(6)
 
 if __name__=='__main__':unittest.main()
