@@ -33,7 +33,8 @@ static unsigned checks, cases;
 static uint64_t test_clock_ns = UINT64_C(100000000000), test_sample;
 static int observed_panel;
 static unsigned panel_calls;
-static int map_full, map_mode=1, map_full_calls, map_center_calls;
+static int map_full, map_mode=1, map_full_calls, map_toggle_calls, map_center_calls;
+static int map_absolute=-1, map_toggles_pending;
 static int observed_idle;
 
 #define REQUIRE(expression) do { \
@@ -82,9 +83,15 @@ int dm_ta_frame_at(int atlas,int frame,dm_ta_frame *out) { (void)atlas; (void)fr
 int dm_swapskill_slot(int slot,int *charges) { (void)slot; *charges=0; return 0; }
 int dm_ui_minimap_rect(float r[4]) { (void)r; return 0; }
 int dm_ui_map_is_full(void) { return map_full; }
-void dm_ui_map_full(int on) { map_full=on; ++map_full_calls; }
+void dm_ui_map_full(int on) { map_absolute=on; ++map_full_calls; }
+void dm_ui_map_toggle(void) { ++map_toggles_pending; ++map_toggle_calls; }
 void dm_ui_map_recenter(void) { ++map_center_calls; }
 int dm_ui_map_geom(float *cell) { *cell=1; return map_mode; }
+static void map_pump(void) {
+    if (map_absolute>=0) map_full=map_absolute;
+    if (map_toggles_pending&1) map_full=!map_full;
+    map_absolute=-1; map_toggles_pending=0;
+}
 unsigned dm_world_tap(float x,float y) { (void)x; (void)y; unexpected_host_call(__func__); return 0; }
 int dm_world_tap_result(unsigned seq) { (void)seq; return -1; }
 uint32_t dm_ui_hit_id(void) { return 0; }
@@ -141,7 +148,8 @@ static void fixture(int navigation) {
     test_clock_ns = UINT64_C(100000000000); test_sample = 0;
     observed_panel=-1; panel_calls=0;
     observed_idle=-1;
-    map_full=map_full_calls=map_center_calls=0; map_mode=1;
+    map_full=map_full_calls=map_toggle_calls=map_center_calls=map_toggles_pending=0;
+    map_absolute=-1; map_mode=1;
     dm_tc_set_safe_insets(0, 0); dm_tc_set_edge_bottom(0); dm_tc_set_safe_bottom(0); dm_tc_set_swap_above(0);
     dm_tc_set_android_edge_margins(0, 0);
     dm_tc_set_panel_state(0); dm_tc_set_tap_box(0); dm_tc_set_cur_stack(0); dm_tc_set_hover_unid(0);
@@ -488,16 +496,22 @@ static void test_android_action_edges_are_not_merged(void) {
 static void test_android_map_actions_and_mode_gate(void) {
     fixture(0); scene.game=1;
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_SIZE);
-    queue_sample(); REQUIRE(map_full_calls==1 && map_full==1);
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_SIZE);
-    queue_sample(); REQUIRE(map_full_calls==2 && map_full==0);
+    queue_sample(); queue_sample();
+    REQUIRE(map_full==0 && map_full_calls==0 && map_toggle_calls==2);
+    map_pump(); REQUIRE(map_full==0);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_SIZE);
+    queue_sample(); REQUIRE(map_full==0 && map_toggle_calls==3);
+    map_pump(); REQUIRE(map_full==1);
+    dm_android_touch_action(DM_ANDROID_ACTION_MAP_SIZE);
+    queue_sample(); map_pump(); REQUIRE(map_full==0 && map_toggle_calls==4);
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_CENTER);
     queue_sample(); REQUIRE(map_center_calls==1);
     map_mode=0;
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_SIZE);
     dm_android_touch_action(DM_ANDROID_ACTION_MAP_CENTER);
     queue_sample(); queue_sample();
-    REQUIRE(map_full_calls==2 && map_center_calls==1);
+    REQUIRE(map_toggle_calls==4 && map_full_calls==0 && map_center_calls==1);
 
     map_mode=1;
     dm_android_touch_action(DM_ANDROID_ACTION_RUN);

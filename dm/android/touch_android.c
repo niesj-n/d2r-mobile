@@ -15,6 +15,7 @@
 uint64_t now_ns(void);
 void dm_uiscreen_set_panel(int panel);
 void dm_tp_request(void);
+void dm_ui_map_toggle(void); /* Relative request supplied by the Android map host policy. */
 /* 绑定观测桥未接入时不捏造技能绑定；基础键位仍走共用状态机。 | Do not fabricate skill bindings if the observation bridge is absent; basic keys still use the shared state machine. */
 void dm_touch_game_set_scene(int game, uint64_t scene, uint64_t world) __attribute__((weak));
 
@@ -399,7 +400,7 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
             } else {
                 float cell;
                 if (dm_ui_map_geom(&cell)) {
-                    if (action == DM_ANDROID_ACTION_MAP_SIZE) dm_ui_map_full(!dm_ui_map_is_full());
+                    if (action == DM_ANDROID_ACTION_MAP_SIZE) dm_ui_map_toggle();
                     else if (action == DM_ANDROID_ACTION_MAP_CENTER) dm_ui_map_recenter();
                 }
             }
