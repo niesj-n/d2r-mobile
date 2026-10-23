@@ -565,6 +565,8 @@ static void test_android_sort_only_current_supported_page(void) {
     REQUIRE(dm_android_touch_sort_context()==0);
     dm_android_touch_action(DM_ANDROID_ACTION_SORT);
     REQUIRE(queue_sample()==0 && sort_inventory_calls==1 && sort_personal_calls==0);
+    test_clock_ns += UINT64_C(2000000000);
+    REQUIRE((queue_sample() & DM_BTN_L)==0 && labels_ready_at==0 && !labels_done);
     sort_context=4;
     REQUIRE(dm_android_touch_sort_context()==4);
     dm_android_touch_action(DM_ANDROID_ACTION_SORT);
