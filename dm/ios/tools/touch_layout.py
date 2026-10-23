@@ -1180,7 +1180,7 @@ def _drop_rows(*rows):
 # 宿主 dm_custom.c 读勾没勾、按应用 / 放弃 / 默认处理。勾选框的消息发一条无害的 ClosePanel（同「极乐世界」），游戏不认
 # 「配音」单选（voice：中文配音 / English voice）只在编进过场解码的包里有（MOVIE_FFMPEG=1，与宿主 dm_custom.c 的 DM_MOVIE_FFMPEG 同一个开关）：缺省包的自定义页一行不多
 _CUSTOM_ANDROID = os.environ.get('DM_ANDROID_PRODUCT') == '1'
-_CUSTOM_KEYS = (('voice',) if os.environ.get('MOVIE_FFMPEG') == '1' else ()) + ('auto_mana', 'merc_pot', 'drop_light', 'map_mark', 'item_notes', 'icloud', 'pot_pick', 'drop_haptic', 'gem_pick', 'store_btn', 'eco_fps') + (('render_scale', 'render_dynamic') if _CUSTOM_ANDROID else ('q3d',)) + ('loot_filter', 'auto_buff', 'touch_swap_above')
+_CUSTOM_KEYS = (('voice',) if os.environ.get('MOVIE_FFMPEG') == '1' else ()) + ('auto_mana', 'merc_pot', 'drop_light', 'map_mark', 'item_notes', 'icloud', 'pot_pick', 'drop_haptic', 'gem_pick', 'store_btn', 'eco_fps') + (('render_scale', 'render_dynamic') if _CUSTOM_ANDROID else ('q3d',)) + ('loot_filter', 'auto_buff', 'touch_swap_above') + (('touch_margin_left', 'touch_margin_right', 'perf_overlay') if _CUSTOM_ANDROID else ())
 # 字在中英表（dm/i18n/ui_text.tsv 的 dmCustom<键名驼峰>），布局写 @键、跟原版语言走（英文版）；行高按中文行数分，英文必须同样行数（不然换语言排版变）
 # The text lives in the Chinese-English string table (dmCustom<key name in camel case> in dm/i18n/ui_text.tsv); layouts write @key and follow the
 # original game's language (English version); row height is assigned by the number of Chinese lines, and English must have the same number of lines
@@ -1222,7 +1222,7 @@ def _custom_toggle_row(i, key, label):
             '            "onClickMessage": "PanelManager:ClosePanel:TouchCustom_%s" } },\n') % (key, y, h, label, key, y + (h - 70) // 2, key)
 def _custom_selector_row(i, key, label):
     y = _CUSTOM_Y[i]; cy = y + (_CUSTOM_LINE_H - 70) // 2
-    value = '60 FPS' if key == 'eco_fps' else '0.85×'
+    value = '60 FPS' if key == 'eco_fps' else '0.85×' if key == 'render_scale' else '0'
     return ('        { "type": "TextBoxWidget", "name": "TouchCustom_%s_Text", "fields": { "rect": { "x": 0, "y": %d, "width": 1000, "height": %d }, "text": "%s", "style": "$StyleSettingsText" } },\n'
             '        { "type": "ButtonWidget", "name": "TouchCustom_%s_prev", "fields": { "rect": { "x": 1010, "y": %d, "width": 70, "height": 70 }, "filename": "PANEL\\\\Stash\\\\Stash_LeftArrow", "normalFrame": 0, "pressedFrame": 2, "hoveredFrame": 1, "disabledFrame": 3, "onClickMessage": "PanelManager:ClosePanel:TouchCustom_%s_prev" } },\n'
             '        { "type": "TextBoxWidget", "name": "TouchCustom_%s_value", "fields": { "rect": { "x": 1090, "y": %d, "width": 210, "height": 70 }, "text": "%s", "style": { "pointSize": 42, "fontColor": "$PanelTitleColor", "alignment": { "h": "center", "v": "center" } } } },\n'
@@ -1291,7 +1291,7 @@ def _custom_page(text):
            '            { "type": "TableWidget", "name": "OptionsTable", "fields": { "columns": [ "$OptionsTableColumn1", "$OptionsTableColumn2" ], "rowHeight": %d }, "children": [\n' % _CUSTOM_TITLE_H
            + title + '            ] },\n'
            + '            { "type": "Widget", "name": "TouchCustomRows", "fields": { "rect": { "x": 0, "y": 0, "width": 1500, "height": %d } }, "children": [\n' % _CUSTOM_H
-           + _custom_lang_row() + ''.join((_custom_selector_row(i, k, l) if _CUSTOM_ANDROID and k in ('eco_fps', 'render_scale') else _custom_q3d_row(i, k) if k in ('voice', 'q3d', 'touch_swap_above') else _custom_toggle_row(i, k, l)) for i, (k, l) in enumerate(_CUSTOM_ALL) if i) + _CUSTOM_LANG_HINT
+           + _custom_lang_row() + ''.join((_custom_selector_row(i, k, l) if _CUSTOM_ANDROID and k in ('eco_fps', 'render_scale', 'touch_margin_left', 'touch_margin_right') else _custom_q3d_row(i, k) if k in ('voice', 'q3d', 'touch_swap_above') else _custom_toggle_row(i, k, l)) for i, (k, l) in enumerate(_CUSTOM_ALL) if i) + _CUSTOM_LANG_HINT
            + ''.join('        { "type": "TextBoxWidget", "name": "TouchCustomTest%d_Text", "fields": { "rect": { "x": 0, "y": %d, "width": 1000, "height": %d }, "text": "@KeyBindingTypeCustom", "style": "$StyleSettingsText" } },\n'
                      % (n, _CUSTOM_Y[len(_CUSTOM_ALL) + n], _CUSTOM_LINE_H) for n in range(_CUSTOM_TEST_ROWS)) +
            # 手柄模式的选中框（同符文之语清单 TouchRwSel）：框住十字键选中的那一行，宿主摆（dm_custom.c）；触屏模式一直在屏外（只把 x 挪出去、y 留在内容范围内：滚动区按子控件的范围算内容高度，y 放到 99999 会把可滚范围撑到十万）。和各行在同一个容器里，跟着滚

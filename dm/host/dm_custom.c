@@ -1,11 +1,11 @@
 // 「自定义」设置：我们自己加的功能的启停开关。接口见 dm_custom.h。
-// 存储：存档提交目录旁的 sw_custom.txt（iOS 上在 Documents 里，升级包不丢），一行一个「键=值」；Android render_scale 为 0..8 档号，其余原有键照旧。
+// 存储：存档提交目录旁的 sw_custom.txt（iOS 上在 Documents 里，升级包不丢），一行一个「键=值」；Android render_scale 为 0..8 档号，touch_margin_left/right 为 0..96 逻辑点，其余原有键照旧。
 // 掉落筛选照红叶 mod 一件都不藏，整块拆掉，drop_filter 键与它的 ver=2 迁移一起删了
 // 不写进游戏自己的设置存档：不依赖它的格式与写盘时机，应用 / 放弃 / 默认由我们自己按原版选项页的语义做。
 // 界面：选项面板「自定义」页（借原版视频页 VideoOptionsPanel），每行一个原版勾选框，控件名 TouchCustom_<键>（布局 touch_layout.py 的 _custom_page）。勾选只记成待定值，
 // 「应用」（OptionsPanelMessage:AcceptChanges）才生效并存盘，「放弃」（CancelChanges）丢掉待定值，「默认」（ResetToDefaults）待定值回各键缺省（省电模式关、其余开；还要点应用）
 // 「自定义」(Custom) settings: on/off switches for the features we added ourselves. For the interface see dm_custom.h.
-// Storage: sw_custom.txt next to the save commit directory (on iOS it is in Documents and survives app upgrades), one key=value per line. Android render_scale stores an index 0..8; existing keys keep their format.
+// Storage: sw_custom.txt next to the save commit directory (on iOS it is in Documents and survives app upgrades), one key=value per line. Android render_scale stores an index 0..8, touch_margin_left/right use 0..96 logical points; existing keys keep their format.
 // Drop filtering follows the Hongye community mod and hides nothing, so the whole block was removed, and the drop_filter key was deleted together with its ver=2 migration
 // Not written into the game's own settings save: no dependence on its format or on when it writes to disk; apply / discard / default are done by ourselves following the semantics of the original game's options page.
 // UI: the 「自定义」(Custom) page of the options panel (borrowing the original game's video page VideoOptionsPanel), one original-game checkbox per row, widget name TouchCustom_<key> (_custom_page in the layout touch_layout.py). Checking only records a pending value;
@@ -43,7 +43,11 @@ static const char *const k_keys[] = { "lang",
 #else
     "q3d",
 #endif
-    "loot_filter", "auto_buff", "touch_swap_above" };   // 顺序 = 自定义页从上到下的行序（touch_layout.py _CUSTOM_ROWS）：手柄在这页按这个顺序上下选行 | Order = row order of the Custom page from top to bottom (touch_layout.py _CUSTOM_ROWS): the controller selects rows up/down on this page in this order
+    "loot_filter", "auto_buff", "touch_swap_above"
+#ifdef __ANDROID__
+    , "touch_margin_left", "touch_margin_right", "perf_overlay"
+#endif
+};   // 顺序 = 自定义页从上到下的行序（touch_layout.py _CUSTOM_ROWS）：手柄在这页按这个顺序上下选行 | Order = row order of the Custom page from top to bottom (touch_layout.py _CUSTOM_ROWS): the controller selects rows up/down on this page in this order
 #define NK (int)(sizeof k_keys / sizeof *k_keys)
 static const int k_def[NK] = { 0,
 #if VOICE_ROW
@@ -55,7 +59,11 @@ static const int k_def[NK] = { 0,
 #else
     0,
 #endif
-    1, 1, 0 };   // Android render scale defaults to .85; other platforms retain q3d=0.
+    1, 1, 0
+#ifdef __ANDROID__
+    , 0, 0, 0
+#endif
+};   // Android render scale defaults to .85; other platforms retain q3d=0.
 // q3d（3D 画质）：0 = 流畅优先（掉帧就自动降 3D 比例）、1 = 画质优先（不自动降）。生效 = 调 hle_oe.c 的 dm_3d_quality_mode_set，读盘与点「应用」时当场调，下一帧控制器就按新档走。
 // 页上是上下两项单选（同语言行）：TouchCustom_q3d 是「画质优先」那格（勾上 = 1），TouchCustom_q3d_smooth 是它的反面
 // q3d (3D quality): 0 = smoothness first (automatically lowers the 3D scale on frame drops), 1 = quality first (no automatic lowering). Applied by calling hle_oe.c's dm_3d_quality_mode_set, immediately on load and on tapping "Apply", so the controller follows the new setting from the next frame.
@@ -68,6 +76,9 @@ static const int k_def[NK] = { 0,
 #define K_DYNAMIC (13 + VOICE_ROW)
 #define K_Q3D -2
 #define K_TOUCH_SWAP (16 + VOICE_ROW)
+#define K_MARGIN_LEFT (17 + VOICE_ROW)
+#define K_MARGIN_RIGHT (18 + VOICE_ROW)
+#define K_PERF (19 + VOICE_ROW)
 #else
 #define K_RENDER -2
 #define K_DYNAMIC -2
@@ -79,6 +90,36 @@ static const char *rev_box(int i) { return i == K_VOICE ? "TouchCustom_voice_zh"
 static _Atomic int g_val[NK];        // 已生效：1 开 / 0 关 | In effect: 1 on / 0 off
 static _Atomic int g_pend[NK];       // 选项页上改了还没应用：-1 = 没改 | Changed on the options page but not applied yet: -1 = not changed
 static _Atomic int g_loaded;         // 0 没读盘 / 1 已读 | 0 not read from disk / 1 read
+#ifdef __ANDROID__
+static _Atomic int g_android_legacy[3];
+/* One atomic publishes a coherent applied snapshot to the Android UI thread. */
+static _Atomic unsigned g_android_applied;
+static int margin_clamp(int value) { return value < 0 ? 0 : value > 96 ? 96 : value; }
+void dm_custom_android_seed_legacy(int left, int right, int monitor) {
+    if (atomic_load(&g_loaded)) return;
+    atomic_store(&g_android_legacy[0], margin_clamp(left));
+    atomic_store(&g_android_legacy[1], margin_clamp(right));
+    atomic_store(&g_android_legacy[2], monitor != 0);
+}
+static void android_publish_applied(void) {
+    unsigned left = (unsigned)atomic_load(&g_val[K_MARGIN_LEFT]);
+    unsigned right = (unsigned)atomic_load(&g_val[K_MARGIN_RIGHT]);
+    unsigned monitor = (unsigned)atomic_load(&g_val[K_PERF]);
+    atomic_store(&g_android_applied, left | (right << 7) | (monitor << 14));
+}
+int dm_custom_android_read_applied(int out[3]) {
+    if (!out || !atomic_load(&g_loaded)) return 0;
+    unsigned snapshot = atomic_load(&g_android_applied);
+    out[0] = (int)(snapshot & 127); out[1] = (int)((snapshot >> 7) & 127); out[2] = (int)((snapshot >> 14) & 1);
+    return 1;
+}
+static int android_selector(int i) { return i == K_RENDER || i == K_ECO || i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT; }
+static int android_selector_step(int i, int current, int direction) {
+    if (i == K_RENDER) return dm_android_render_scale_step(current, direction);
+    if (i == K_ECO) return dm_android_fps_step(current, direction);
+    return margin_clamp(current + direction);
+}
+#endif
 // lang（语言开关，自定义页第一行）：五项单选 0 中文 / 1 English / 2 Español / 3 Русский / 4 한국어（勾选框 TouchCustom_lang_zh / _en / _es / _ru / _ko 互斥）。它不是功能开关，生效方式不同——
 // 下次启动挂存档时由 hle_fs.c 按它改写原版设置文件的 Language / VoiceLanguage（游戏运行中自己会把内存里的语言写回设置文件，所以只能在游戏读设置之前改；
 // 见 dm_custom_lang_explicit）。文件里没有这个键（还没点过应用；旧版本写的布尔键 lang_en 不再读——原版设置文件里本来就记着上次选的语言）
@@ -116,14 +157,24 @@ static void load_once(void) {
     if (atomic_load(&g_loaded)) return;
     char p[1100]; if (!file_path(p, sizeof p)) return;   // 存档还没挂上：先按缺省开答，挂上后再读 | The save is not mounted yet: answer with the default (on) for now, and read again after it is mounted
     int v[NK]; for (int i = 0; i < NK; i++) v[i] = k_def[i];
+#ifdef __ANDROID__
+    v[K_MARGIN_LEFT] = atomic_load(&g_android_legacy[0]);
+    v[K_MARGIN_RIGHT] = atomic_load(&g_android_legacy[1]);
+    v[K_PERF] = atomic_load(&g_android_legacy[2]);
+#endif
     FILE *f = fopen(p, "r"); char ln[128];
     int lang = -1, voice = -1, merc = -1;
     while (f && fgets(ln, sizeof ln, f)) { char *eq = strchr(ln, '='); if (!eq) continue; *eq = 0; int i = key_index(ln); if (i > 0 && i != K_RENDER && i != K_DYNAMIC
 #ifdef __ANDROID__
-        && i != K_ECO
+        && i != K_ECO && i != K_MARGIN_LEFT && i != K_MARGIN_RIGHT && i != K_PERF
 #endif
         ) v[i] = eq[1] != '0';
 #ifdef __ANDROID__
+        if (i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT || i == K_PERF) {
+            /* Presence supersedes old prefs, including malformed canonical values. */
+            v[i] = k_def[i]; char *end; long x = strtol(eq + 1, &end, 10);
+            if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x <= (i == K_PERF ? 1 : 96)) v[i] = (int)x;
+        }
         if (i == K_ECO) { char *end; long x = strtol(eq + 1, &end, 10);
             if (end != eq + 1 && (*end == 0 || *end == '\r' || *end == '\n') && x >= 0 && x <= 5) v[i] = (int)x; }
         if (i == K_RENDER) { char *end; long x = strtol(eq + 1, &end, 10);
@@ -153,6 +204,7 @@ static void load_once(void) {
     v[K_MERC] = merc < 0 ? k_def[K_MERC] : merc; atomic_store(&g_merc_explicit, merc);
     for (int i = 0; i < NK; i++) { atomic_store(&g_val[i], v[i]); atomic_store(&g_pend[i], -1); }
 #ifdef __ANDROID__
+    android_publish_applied();
     dm_3d_quality_mode_set(!v[K_DYNAMIC]); LOG("自定义设置：Android 3D 比例读盘 %.2f，动态 %d", dm_android_render_scale_value(v[K_RENDER]), v[K_DYNAMIC]);
 #else
     dm_3d_quality_mode_set(v[K_Q3D]); LOG("自定义设置：3D 画质读盘为%s（q3d=%d，已交给 3D 比例控制）", v[K_Q3D] ? "画质优先" : "流畅优先", v[K_Q3D]);
@@ -187,21 +239,14 @@ static void save(void) {
 void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
 #ifdef __ANDROID__
     if (cat && act && arg && !strcmp(cat, "PanelManager") && !strcmp(act, "ClosePanel")) {
-        int direction = !strcmp(arg, "TouchCustom_render_scale_prev") ? -1 :
-                        !strcmp(arg, "TouchCustom_render_scale_next") ? 1 : 0;
-        if (direction) { load_once(); int pending = atomic_load(&g_pend[K_RENDER]);
-            int current = pending >= 0 ? pending : atomic_load(&g_val[K_RENDER]);
-            int next = dm_android_render_scale_step(current, direction);
-            if (next != current) { atomic_store(&g_pend[K_RENDER], next);
-                LOG("自定义设置：3D 比例待应用 %.2f", dm_android_render_scale_value(next)); }
-            return; }
-        direction = !strcmp(arg, "TouchCustom_eco_fps_prev") ? -1 :
-                    !strcmp(arg, "TouchCustom_eco_fps_next") ? 1 : 0;
-        if (direction) { load_once(); int current = atomic_load(&g_pend[K_ECO]);
-            if (current < 0) current = atomic_load(&g_val[K_ECO]);
-            int next = dm_android_fps_step(current, direction);
-            if (next != current) atomic_store(&g_pend[K_ECO], next);
-            return; }
+        for (int i = 1; i < NK; i++) if (android_selector(i)) { char name[80];
+            snprintf(name, sizeof name, "TouchCustom_%s_prev", k_keys[i]); int direction = !strcmp(arg, name) ? -1 : 0;
+            snprintf(name, sizeof name, "TouchCustom_%s_next", k_keys[i]); if (!strcmp(arg, name)) direction = 1;
+            if (direction) { load_once(); int current = atomic_load(&g_pend[i]);
+                if (current < 0) current = atomic_load(&g_val[i]);
+                int next = android_selector_step(i, current, direction);
+                if (next != current) atomic_store(&g_pend[i], next);
+                return; } }
     }
 #else
     (void)arg;
@@ -217,8 +262,12 @@ void dm_custom_on_uimsg(const char *cat, const char *act, const char *arg) {
             if (i == 0) atomic_store(&g_lang_explicit, pd); if (i == K_VOICE) atomic_store(&g_voice_explicit, pd); if (i == K_MERC) atomic_store(&g_merc_explicit, pd); if (i == 0) LOG("自定义设置：语言 → %s（应用；下次启动生效）", k_lang_name[pd]); else if (i == K_VOICE) LOG("自定义设置：配音 → %s（应用；下次启动生效）", pd ? "English" : "中文");
 #ifdef __ANDROID__
             else if (i == K_ECO) LOG("自定义设置：目标帧率 → %d FPS（应用）", dm_android_fps_value(pd));
+            else if (i == K_MARGIN_LEFT || i == K_MARGIN_RIGHT) LOG("自定义设置：%s → %d 逻辑点（应用）", k_keys[i], pd);
 #endif
             else if (i != K_RENDER) LOG("自定义设置：%s → %s（应用）", k_keys[i], pd ? "开" : "关"); } }
+#ifdef __ANDROID__
+        android_publish_applied();
+#endif
         if (ch) save(); }
     else if (!strcmp(act, "CancelChanges")) { for (int i = 0; i < NK; i++) atomic_store(&g_pend[i], -1); atomic_store(&g_repaint, 1); }
     else if (!strcmp(act, "ResetToDefaults")) { for (int i = 1 + VOICE_ROW; i < NK; i++) atomic_store(&g_pend[i], k_def[i]); atomic_store(&g_repaint, 1); }   // 从 1 起（有配音行时从 2 起）：语言与单独配音那一格不归「默认」管
@@ -283,16 +332,16 @@ void dm_custom_ui_pump(unsigned long long root) {
           if (ev & DM_BTN_DOWN) sel = sel + 1 < NK ? sel + 1 : sel; else if (ev & DM_BTN_UP) sel = sel > 0 ? sel - 1 : 0;
           snprintf(nm, sizeof nm, "TouchCustom_%s", k_keys[sel]); cw = find_w(sp, sel == 0 ? k_lang_box[LANG_N - 1] : nm, 0); snprintf(nm, sizeof nm, "TouchCustom_%s_Text", k_keys[sel]); tw = find_w(sp, nm, 0);   // 语言行：框住标签到最右那一格 | Language row: box from the label to the rightmost cell
 #ifdef __ANDROID__
-          if (sel == K_RENDER || sel == K_ECO) { cw = find_w(sp, sel == K_RENDER ? "TouchCustom_render_scale_next" : "TouchCustom_eco_fps_next", 0);
+          if (android_selector(sel)) { snprintf(nm, sizeof nm, "TouchCustom_%s_next", k_keys[sel]); cw = find_w(sp, nm, 0);
               int dir = (ev & DM_BTN_LEFT) ? -1 : (ev & (DM_BTN_RIGHT | DM_BTN_A)) ? 1 : 0;
               if (dir) { int pd = atomic_load(&g_pend[sel]);
                   int current = pd >= 0 ? pd : atomic_load(&g_val[sel]);
-                  int next = sel == K_RENDER ? dm_android_render_scale_step(current, dir) : dir < 0 ? 1 : 0;
+                  int next = sel == K_ECO ? (dir < 0 ? 1 : 0) : android_selector_step(sel, current, dir);
                   atomic_store(&g_pend[sel], next); } }
 #endif
           if ((ev & DM_BTN_A) && cw && dm_wref_get(&seen[sel]) == cw) {
 #ifdef __ANDROID__
-              if (sel == K_RENDER || sel == K_ECO) { /* handled by the left/right selector above */ }
+              if (android_selector(sel)) { /* handled by the left/right selector above */ }
               else
 #endif
               if (sel == K_VOICE || sel == K_Q3D || sel == K_TOUCH_SWAP) { int p0 = atomic_load(&g_pend[sel]), sh = p0 >= 0 ? p0 : atomic_load(&g_val[sel]); atomic_store(&g_pend[sel], !sh); set_toggle(cw, !sh); { uint64_t z = find_w(sp, rev_box(sel), 0); if (z) set_toggle(z, sh); }
@@ -322,12 +371,13 @@ void dm_custom_ui_pump(unsigned long long root) {
           for (int k = 0; k < LANG_N; k++) if (TOGGLED(bx[k]) != (k == to)) set_toggle(bx[k], k == to); } }
     for (int i = 1; i < NK; i++) {
 #ifdef __ANDROID__
-        if (i == K_RENDER || i == K_ECO) { uint64_t value = find_w(sp, i == K_RENDER ? "TouchCustom_render_scale_value" : "TouchCustom_eco_fps_value", 0);
+        if (android_selector(i)) { char name[80]; snprintf(name, sizeof name, "TouchCustom_%s_value", k_keys[i]); uint64_t value = find_w(sp, name, 0);
             int pd = atomic_load(&g_pend[i]), shown = pd >= 0 ? pd : atomic_load(&g_val[i]);
             char text[20]; if (i == K_RENDER) snprintf(text, sizeof text, "%.2f×", dm_android_render_scale_value(shown));
-            else snprintf(text, sizeof text, "%d FPS%s", dm_android_fps_value(shown), dm_android_fps_value(shown) >= 90 ? "*" : "");
+            else if (i == K_ECO) snprintf(text, sizeof text, "%d FPS%s", dm_android_fps_value(shown), dm_android_fps_value(shown) >= 90 ? "*" : "");
+            else snprintf(text, sizeof text, "%d", shown);
             if (value) selector_text(main_base(), value, text);
-            dm_wref_set(&seen[i], find_w(sp, i == K_RENDER ? "TouchCustom_render_scale_next" : "TouchCustom_eco_fps_next", 0)); continue; }
+            snprintf(name, sizeof name, "TouchCustom_%s_next", k_keys[i]); dm_wref_set(&seen[i], find_w(sp, name, 0)); continue; }
 #endif
         char nm[48]; snprintf(nm, sizeof nm, "TouchCustom_%s", k_keys[i]);
         uint64_t w = find_w(sp, nm, 0); if (!w || !*(uint8_t *)(w + 0x50)) continue;

@@ -36,9 +36,18 @@ def host_variant(voice):   # 宿主按 VOICE_ROW（DM_MOVIE_FFMPEG）条件编�
     keys = re.search(r'static const char \*const k_keys\[\].*?#define NK', host_src, re.S)[0]
     defaults = re.search(r'static const int k_def\[NK\].*?#define K_VOICE', host_src, re.S)[0]
     keep = keys + '\n' + defaults
-    keep = re.sub(r'#ifdef __ANDROID__\n.*?#else\n(.*?)#endif', r'\1', keep, flags=re.S)
-    keep = re.sub(r'#if VOICE_ROW\n(.*?)#endif\n', (lambda m: m[1]) if voice else '', keep, flags=re.S)
-    return re.sub(r'(?m)^#.*\n', '', keep)
+    output, active, parents = [], True, []
+    for line in keep.splitlines():
+        if line == '#ifdef __ANDROID__' or line == '#if VOICE_ROW':
+            parents.append(active)
+            active = active and (voice if line == '#if VOICE_ROW' else False)
+        elif line == '#else':
+            active = parents[-1] and not active
+        elif line == '#endif':
+            active = parents.pop()
+        elif active and not line.startswith('#'):
+            output.append(line)
+    return '\n'.join(output)
 for voice in (False, True):
     if voice:
         os.environ['MOVIE_FFMPEG'] = '1'; layout = importlib.reload(layout)
