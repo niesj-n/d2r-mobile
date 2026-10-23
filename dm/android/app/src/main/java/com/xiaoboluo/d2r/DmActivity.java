@@ -64,6 +64,9 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     private FrameLayout gameFrame;
     private TouchOverlay touchOverlay;
     private ImageButton touchSettingsButton;
+    private LinearLayout touchToolbar;
+    private final TextView[] gameplayActions = new TextView[4];
+    private int safeToolbarLeft, safeToolbarRight, safeToolbarTop;
     private boolean started;
     private boolean importing;
     private boolean libraryLoaded;
@@ -87,6 +90,9 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
         view.getHolder().addCallback(this);
         gameFrame = new FrameLayout(this);
         gameFrame.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        gameFrame.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right-left != oldRight-oldLeft) layoutTouchToolbar();
+        });
         setContentView(gameFrame);
         immersive();
     }
@@ -139,6 +145,35 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private TextView gameplayButton(int label, int description, int action) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setTextColor(0xffffffff);
+        button.setTextSize(12);
+        button.setGravity(Gravity.CENTER);
+        button.setBackgroundColor(0x88302b25);
+        button.setContentDescription(getString(description));
+        button.setOnClickListener(v -> touchOverlay.sendGameplayAction(action));
+        button.setOnLongClickListener(v -> true);
+        button.setVisibility(View.GONE);
+        return button;
+    }
+
+    private void layoutTouchToolbar() {
+        if (touchToolbar == null || gameFrame.getWidth() <= 0) return;
+        if (touchToolbar.getPaddingLeft() != safeToolbarLeft || touchToolbar.getPaddingRight() != safeToolbarRight)
+            touchToolbar.setPadding(safeToolbarLeft, 0, safeToolbarRight, 0);
+        int cell = TouchActionBarSizing.cellWidth(gameFrame.getWidth(), safeToolbarLeft, safeToolbarRight,
+                getResources().getDisplayMetrics().density);
+        for (TextView button : gameplayActions) if (button != null && button.getLayoutParams().width != cell)
+            button.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
+        if (touchSettingsButton != null && touchSettingsButton.getLayoutParams().width != cell)
+            touchSettingsButton.setLayoutParams(new LinearLayout.LayoutParams(cell, dp(48)));
+        FrameLayout.LayoutParams placement = (FrameLayout.LayoutParams) touchToolbar.getLayoutParams();
+        int top = safeToolbarTop + dp(8);
+        if (placement.topMargin != top) { placement.topMargin = top; touchToolbar.setLayoutParams(placement); }
+    }
 
     private void saveTouchMargins(int left, int right) {
         if (!TouchMarginSettings.save(touchMarginStore(), left, right)) {
@@ -313,23 +348,39 @@ public class DmActivity extends Activity implements SurfaceHolder.Callback, Disp
             touchOverlay.setOnApplyWindowInsetsListener((v, insets) -> {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.displayCutout());
                 touchOverlay.setSafeInsets(safe.left, safe.right, safe.bottom);
-                if (touchSettingsButton != null) {
-                    FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) touchSettingsButton.getLayoutParams();
-                    int top = safe.top + dp(8);
-                    if (params.topMargin != top) { params.topMargin = top; touchSettingsButton.setLayoutParams(params); }
-                }
+                safeToolbarLeft = safe.left; safeToolbarRight = safe.right; safeToolbarTop = safe.top;
+                layoutTouchToolbar();
                 return insets;
             });
             gameFrame.addView(touchOverlay, new FrameLayout.LayoutParams(-1, -1));
+            touchToolbar = new LinearLayout(this);
+            touchToolbar.setOrientation(LinearLayout.HORIZONTAL);
+            touchToolbar.setGravity(Gravity.CENTER_HORIZONTAL);
+            int[] labels = {R.string.dmAndroidRunWalkShort, R.string.dmAndroidMapVisibilityShort,
+                    R.string.dmAndroidMapSizeShort, R.string.dmAndroidMapCenterShort};
+            int[] descriptions = {R.string.dmAndroidRunWalk, R.string.dmAndroidMapVisibility,
+                    R.string.dmAndroidMapSize, R.string.dmAndroidMapCenter};
+            int[] actions = {TouchOverlay.ACTION_RUN_WALK, TouchOverlay.ACTION_MAP_VISIBILITY,
+                    TouchOverlay.ACTION_MAP_SIZE, TouchOverlay.ACTION_MAP_CENTER};
+            for (int i=0; i<gameplayActions.length; i++) {
+                gameplayActions[i] = gameplayButton(labels[i], descriptions[i], actions[i]);
+                touchToolbar.addView(gameplayActions[i], new LinearLayout.LayoutParams(dp(48), dp(48)));
+            }
             touchSettingsButton = new ImageButton(this);
             touchSettingsButton.setImageResource(android.R.drawable.ic_menu_preferences);
             touchSettingsButton.setContentDescription(getString(R.string.dmAndroidTouchSettings));
             touchSettingsButton.setBackgroundColor(0x88302b25);
             touchSettingsButton.setAlpha(0.8f);
             touchSettingsButton.setOnClickListener(v -> showTouchSettings());
-            FrameLayout.LayoutParams settingsPlacement = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            settingsPlacement.topMargin = dp(8);
-            gameFrame.addView(touchSettingsButton, settingsPlacement);
+            touchToolbar.addView(touchSettingsButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
+            FrameLayout.LayoutParams toolbarPlacement = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);
+            toolbarPlacement.topMargin = dp(8);
+            gameFrame.addView(touchToolbar, toolbarPlacement);
+            touchOverlay.setGameplayListener(gameplay -> {
+                for (TextView action : gameplayActions) action.setVisibility(gameplay ? View.VISIBLE : View.GONE);
+                layoutTouchToolbar();
+            });
+            layoutTouchToolbar();
             touchOverlay.requestApplyInsets();
         }
         if (!view.getHolder().getSurface().isValid() || view.getWidth() <= 0 || view.getHeight() <= 0) return;

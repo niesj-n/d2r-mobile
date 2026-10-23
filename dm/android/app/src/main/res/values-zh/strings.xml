@@ -5,5 +5,13 @@
     <string name="dmAndroidTouchRightMargin">右侧边距：%1$d dp</string>
     <string name="dmAndroidTouchRestore">恢复默认</string>
     <string name="dmAndroidTouchSaveFailed">触控设置未能保存，请重试。</string>
+    <string name="dmAndroidRunWalkShort">跑/走</string>
+    <string name="dmAndroidMapVisibilityShort">地图</string>
+    <string name="dmAndroidMapSizeShort">大小</string>
+    <string name="dmAndroidMapCenterShort">居中</string>
+    <string name="dmAndroidRunWalk">切换跑步或行走</string>
+    <string name="dmAndroidMapVisibility">显示或隐藏地图</string>
+    <string name="dmAndroidMapSize">切换全屏地图或小地图</string>
+    <string name="dmAndroidMapCenter">将地图居中到角色</string>
     <string name="dmAndroidImportLocation">导入包位置：Download/%1$s/android</string>
 </resources>

@@ -28,6 +28,9 @@ int dm_hud_stack_msg(const char *act, const char *arg);
 static int hud_blocked;
 static touch_event queue[256];
 static unsigned head, tail;
+static int action_queue[256];
+static unsigned action_head, action_tail;
+static int action_release;
 static int ready, focused = 1, cancel, resizing, ui_drag;
 static float width = 800, height = 375, safe_left, safe_right, safe_bottom;
 static float margin_left, margin_right;
@@ -88,6 +91,7 @@ static void cancel_locked(void) {
     fe_end_locked();
     pulse_epoch = pulse_sample = resume_sample = 0;
     pulse_hold_start = 0;
+    action_head = action_tail = 0; action_release = 0;
     memset(direct,0,sizeof direct); selected_point=0; stat_next=skill_add_at=0; map_world_pending=0;
     dm_cursor_clear();
 }
@@ -111,6 +115,13 @@ void dm_android_touch_margins(float left_dp, float right_dp) {
 void dm_android_touch_tablet(int tablet) {
     pthread_mutex_lock(&lock);
     tablet_layout = !!tablet; resizing = cancel = 1;
+    pthread_mutex_unlock(&lock);
+}
+void dm_android_touch_action(int action) {
+    if (action < DM_ANDROID_ACTION_RUN || action > DM_ANDROID_ACTION_MAP_CENTER) return;
+    pthread_mutex_lock(&lock);
+    if (focused && ready && scene.game && !frontend && !tc.navigation_mode && action_tail-action_head < 256)
+        action_queue[action_tail++ % 256] = action;
     pthread_mutex_unlock(&lock);
 }
 void dm_android_touch_focus(int active) {
@@ -147,6 +158,7 @@ void dm_android_touch_uimsg(const char *cat, const char *act, const char *arg) {
     int fe = !scene.game && touch_overlay();
     if (fe != frontend) { cancel_locked(); head = tail = 0; frontend = fe; }
     dm_tc_set_navigation_mode(&tc, nav);
+    if (nav || fe) { action_head = action_tail = 0; action_release = 0; }
     dm_tc_set_joy_block(&tc, !!(dm_ui_panel_state() & DM_PS_TEXT));
     /* 游戏态不要右上地图键（同 iOS front_ios.m navigationMode：点右上角小地图本身就开全屏地图，见 direct_begin）
        No top-right map key in game state (as iOS front_ios.m navigationMode: tapping the top-right minimap itself opens the full map, see direct_begin) */
@@ -369,7 +381,24 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     if (!tc.pulse_button && dm_tc_pulse_pending(&tc) && resume_sample && sample >= resume_sample) { dm_tc_pulse_resume(&tc); resume_sample = 0; }
     if (tc.pointer_valid) dm_cursor_set_screen(tc.pointer_x,tc.pointer_y,width,height); else dm_cursor_clear();
     int active = 0; for (int i=0;i<DM_TC_MAX_TOUCH;++i) active |= tc.finger[i].active;
-    dm_ui_hand_idle(!active && !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
+    dm_ui_hand_idle(!active && action_head==action_tail && !action_release &&
+                    !tc.pulse_button && !dm_tc_pulse_pending(&tc) && !dm_cursor_pending() && !dm_ui_touch_active());
+    if (scene.game && !frontend && !tc.navigation_mode) {
+        if (action_release) action_release = 0; /* One sampled release between key presses. */
+        else if (action_head != action_tail) {
+            int action = action_queue[action_head++ % 256];
+            if (action == DM_ANDROID_ACTION_RUN || action == DM_ANDROID_ACTION_MAP_VISIBILITY) {
+                *buttons |= action == DM_ANDROID_ACTION_RUN ? DM_BTN_LS : DM_BTN_MINUS;
+                action_release = 1;
+            } else {
+                float cell;
+                if (dm_ui_map_geom(&cell)) {
+                    if (action == DM_ANDROID_ACTION_MAP_SIZE) dm_ui_map_full(!dm_ui_map_is_full());
+                    else if (action == DM_ANDROID_ACTION_MAP_CENTER) dm_ui_map_recenter();
+                }
+            }
+        }
+    } else { action_head = action_tail = 0; action_release = 0; }
     *buttons |= tc.buttons;
     for (int i=0;i<DM_TC_MAX_TOUCH;++i) *buttons |= latched[i];
     if (!*lx && !*ly) { *lx = tc.lx; *ly = tc.ly; }

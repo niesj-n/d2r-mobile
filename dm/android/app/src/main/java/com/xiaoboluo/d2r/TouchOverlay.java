@@ -31,9 +31,11 @@ import org.json.JSONArray;
 
 /** 透明悬浮触摸层：与游戏Surface同尺寸，不挤占游戏高度。 | Transparent overlay sharing the game Surface bounds without reducing its height. */
 public final class TouchOverlay extends View {
+    public static final int ACTION_RUN_WALK=1, ACTION_MAP_VISIBILITY=2, ACTION_MAP_SIZE=3, ACTION_MAP_CENTER=4;
     private static native void nativeEvent(int phase, int slot, float x, float y);
     private static native void nativeResize(float width, float height, float left, float right, float bottom, boolean tablet);
     private static native void nativeMargins(float left, float right);
+    private static native void nativeAction(int action);
     private static native void nativeLayout(float[] out);
     private final float density;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -47,7 +49,11 @@ public final class TouchOverlay extends View {
     private final Choreographer.FrameCallback poll = new Choreographer.FrameCallback() {
         @Override public void doFrame(long frameTimeNanos) {
             if (!running) return;
-            if (inputEnabled && isShown()) { nativeLayout(probe); if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate(); }
+            if (inputEnabled && isShown()) {
+                nativeLayout(probe);
+                publishGameplay(probe[2]==0);
+                if (!drawnValid || !Arrays.equals(probe, drawn)) invalidate();
+            } else publishGameplay(false);
             Choreographer.getInstance().postFrameCallback(this);
         }
     };
@@ -66,7 +72,22 @@ public final class TouchOverlay extends View {
     private JSONObject hudUi;
     private float safeLeft, safeRight, safeBottom;
     private int marginLeft, marginRight;
-    private boolean running, inputEnabled;
+    public interface GameplayListener { void changed(boolean gameplay); }
+    private GameplayListener gameplayListener;
+    private boolean running, inputEnabled, gameplay;
+
+    public void setGameplayListener(GameplayListener listener) {
+        gameplayListener=listener;
+        if (listener!=null) listener.changed(gameplay);
+    }
+    private void publishGameplay(boolean value) {
+        if (gameplay==value) return;
+        gameplay=value;
+        if (gameplayListener!=null) gameplayListener.changed(value);
+    }
+    public void sendGameplayAction(int action) {
+        if (inputEnabled && gameplay) nativeAction(action);
+    }
 
     /** labels为本地化表中的15项：12键、摇杆、换组、难度；menuLabels为导航态前五键。 | Pass 15 localized game labels and five navigation labels from the shared string table. */
     public TouchOverlay(Context context, String[] labels, String[] menuLabels) {
@@ -101,7 +122,7 @@ public final class TouchOverlay extends View {
     /** 仅在libdm加载且guest启动成功后开启；暂停时先取消触点。 | Enable only after libdm loads and the guest starts; disabling cancels first. */
     public void setInputEnabled(boolean enabled) {
         if (inputEnabled==enabled) return;
-        if (!enabled) cancelTouches();
+        if (!enabled) { cancelTouches(); publishGameplay(false); }
         inputEnabled=enabled;
         drawnValid=false; invalidate();
         if (enabled) {
@@ -126,7 +147,7 @@ public final class TouchOverlay extends View {
         super.onAttachedToWindow(); running=true; drawnValid=false; invalidate(); Choreographer.getInstance().postFrameCallback(poll);
     }
     @Override protected void onDetachedFromWindow() {
-        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); super.onDetachedFromWindow();
+        running=false; Choreographer.getInstance().removeFrameCallback(poll); cancelTouches(); publishGameplay(false); super.onDetachedFromWindow();
     }
     public void cancelTouches() {
         if (!inputEnabled) { Arrays.fill(pointerIds,-1); return; }

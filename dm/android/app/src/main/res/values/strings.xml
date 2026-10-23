@@ -5,5 +5,13 @@
     <string name="dmAndroidTouchRightMargin">Right edge: %1$d dp</string>
     <string name="dmAndroidTouchRestore">Restore defaults</string>
     <string name="dmAndroidTouchSaveFailed">Could not save touch settings. Please try again.</string>
+    <string name="dmAndroidRunWalkShort">Run</string>
+    <string name="dmAndroidMapVisibilityShort">Map</string>
+    <string name="dmAndroidMapSizeShort">Size</string>
+    <string name="dmAndroidMapCenterShort">Center</string>
+    <string name="dmAndroidRunWalk">Toggle run or walk</string>
+    <string name="dmAndroidMapVisibility">Show or hide map</string>
+    <string name="dmAndroidMapSize">Toggle full map or minimap</string>
+    <string name="dmAndroidMapCenter">Center map on character</string>
     <string name="dmAndroidImportLocation">Import pack: Download/%1$s/android</string>
 </resources>

@@ -7,6 +7,10 @@ extern "C" {
 void dm_android_touch_resize(float width_dp, float height_dp, float left_dp, float right_dp, float bottom_dp);
 void dm_android_touch_tablet(int tablet);
 void dm_android_touch_margins(float left_dp, float right_dp);
+#define DM_ANDROID_TOUCH_ACTIONS_AVAILABLE 1
+enum { DM_ANDROID_ACTION_RUN=1, DM_ANDROID_ACTION_MAP_VISIBILITY=2,
+       DM_ANDROID_ACTION_MAP_SIZE=3, DM_ANDROID_ACTION_MAP_CENTER=4 };
+void dm_android_touch_action(int action);
 /* phase: 0 down, 1 move, 2 up, 3 cancel; slot: stable 0..15; coordinates in dp. | 阶段：按下/移动/抬起/取消；槽固定0..15；坐标dp。 */
 void dm_android_touch_event(int phase, int slot, float x, float y);
 void dm_android_touch_focus(int active);
