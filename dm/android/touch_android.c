@@ -151,21 +151,12 @@ static void space_combat_controls_locked(void) {
     l->joy_max_x=fmaxf(l->joy_min_x,fminf(l->joy_max_x,first-l->joy_radius-2*k));
     l->joy_zone_r=fmaxf(l->joy_zone_l,fminf(l->joy_zone_r,l->joy_max_x));
 }
-/* Apply once to each freshly computed shared layout. Keep button priority,
- * margins and the existing combat-clearance cap, while extending the Android
- * stick-start region five percent rightward/upward. A held stick may leave it. */
-static void expand_joystick_zone_locked(void) {
-    dm_tc_layout *l=&tc.layout;
-    l->joy_zone_r=fmaxf(l->joy_zone_l,fminf(l->joy_zone_r+l->width*.05f,l->joy_max_x));
-    l->joy_zone_t=l->height*.40f;
-}
 static void init_locked(void) {
     if (ready) return;
     aim_feedback_reset();
     dm_tc_set_tall_scale(tablet_layout);
     dm_tc_init(&tc, width, height);
     space_combat_controls_locked();
-    expand_joystick_zone_locked();
     tc.mouse_click_mode = 1;
     dm_tc_set_navigation_mode(&tc, 1);
     dm_tc_enable_targets(&tc, dm_tc_nav_mask(nav_pad()));   /* 开局读取期间也是面板态，同样不出圆钮 | loading at game start is panel state too, no buttons either */
@@ -544,11 +535,14 @@ void dm_android_touch_step(uint64_t guest_now, uint64_t *buttons, int32_t *lx, i
     if (cancel) { cancel_locked(); cancel = 0; }
     if (resizing) {
         dm_tc_set_tall_scale(tablet_layout); dm_tc_set_swap_above(swap_above);
-        dm_tc_set_android_edge_margins(margin_left, margin_right);
+        /* The left slider still positions the map shortcut. A floating stick
+         * must start at the screen edge and must not inherit that inset (or
+         * indirectly compress the right margin against it). */
+        dm_tc_set_android_edge_margins(0, margin_right);
         dm_tc_set_safe_insets(safe_left,safe_right); dm_tc_set_edge_bottom(safe_bottom); dm_tc_set_safe_bottom(safe_bottom);
         dm_ui_safe_left((int)lroundf(safe_left * 2160 / height));
         dm_ui_safe_right((int)lroundf(safe_right * 2160 / height));
-        dm_tc_resize(&tc,width,height); space_combat_controls_locked(); expand_joystick_zone_locked(); resizing = 0;
+        dm_tc_resize(&tc,width,height); space_combat_controls_locked(); resizing = 0;
     }
     if (!focused) { pthread_mutex_unlock(&lock); return; }
     sync_host();

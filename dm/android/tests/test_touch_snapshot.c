@@ -481,11 +481,11 @@ static void test_independent_android_margins(void) {
     dm_tc_target main0=tc.layout.target[DM_TC_MAIN];
     float joy0=tc.layout.joy_x;
     dm_android_touch_margins(48,0); queue_sample();
-    REQUIRE(tc.layout.joy_x>joy0+47 && tc.layout.joy_x<joy0+49);
+    REQUIRE(tc.layout.joy_x==joy0 && tc.layout.joy_zone_l==0);
     REQUIRE(tc.layout.target[DM_TC_MAIN].r==main0.r);
     REQUIRE(tc.layout.target[DM_TC_MAIN].x==main0.x);
     dm_tc_begin_at(&tc, 0, 4, tc.layout.height-40, 101.0);
-    REQUIRE(tc.finger[0].target!=DM_TC_JOYSTICK);
+    REQUIRE(tc.finger[0].target==DM_TC_JOYSTICK);
     dm_tc_cancel_all(&tc);
     dm_tc_begin_at(&tc, 0, tc.layout.joy_x, tc.layout.joy_y, 102.0);
     REQUIRE(tc.finger[0].target==DM_TC_JOYSTICK);
