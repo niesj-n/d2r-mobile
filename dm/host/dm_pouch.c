@@ -41,6 +41,9 @@
 // Threads: dm_pouch_step on the game main thread (dm_world.c); UI message callback dm_pouch_on_uimsg (diag.c); stow / release / system notices in the server tick dm_pouch_srv_tick (hud_tick in diag.c);
 // persistence in the pre-commit hook pouch_hook on the disk-write thread (start of Commit in hle_fs.c, [2]).
 #include "dm_widget.h"
+#ifdef __ANDROID__
+#include "../android/product_inventory_row.h"
+#endif
 #include "hle.h"
 #include "dm_i18n.h"
 #include <stdatomic.h>
@@ -426,7 +429,11 @@ static void ui_pump(void) {
     if (!boxw) return;
     int gp = dm_custom_get("gem_pick"), sb = dm_custom_get("store_btn");
     w_move(find_w(boxw, "TouchPouch", 1), gp ? 222 : 99999, 1294); w_move(find_w(boxw, "TouchPouchIcon", 1), gp ? 246 : 99999, 1310); w_move(find_w(boxw, "TouchPouchCount", 1), gp ? 350 : 99999, 1294);
+#ifdef __ANDROID__
+    w_move(find_w(boxw, "TouchStore", 1), sb ? DM_ANDROID_SORT_ROW_STORE_X : 99999, DM_ANDROID_SORT_ROW_Y);
+#else
     w_move(find_w(boxw, "TouchStore", 1), sb ? 916 : 99999, 1323);
+#endif
     static int shown = -1; int gen = atomic_load(&g_ugen); if (gen != shown) { char n[16]; snprintf(n, sizeof n, "%d", atomic_load(&g_ucount)); w_text(find_w(boxw, "TouchPouchCount", 1), n); shown = gen; if (g_tip) tip_show(root, 1); }
     if (atomic_exchange(&g_pouch_tap, 0)) tip_show(root, !g_tip);
     if (g_tip) tip_show(root, 1);   // 文字控件量尺寸要晚一两帧（fitToText）：开着时每帧对齐 | Text widgets measure their size a frame or two late (fitToText): align every frame while open

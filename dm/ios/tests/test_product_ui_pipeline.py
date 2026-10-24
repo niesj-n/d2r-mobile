@@ -85,16 +85,50 @@ class ProductPipeline(unittest.TestCase):
                 self.assertEqual(sort['fields']['onClickMessage'], 'PanelManager:ClosePanel:TouchProductSort')
                 self.assertEqual(sum(c.get('name') == 'TouchProductSort' for c in root['children']), 1)
 
+    def test_inventory_actions_share_bottom_row(self):
+        root = layout_patch.load_text(self.final[INV])
+        sort = named(root, 'TouchProductSort')['fields']
+        store = named(root, 'TouchStore')['fields']
+        self.assertEqual(sort['rect']['y'], store['rect']['y'])
+        self.assertEqual(sort['rect']['y'], 1323)
+        self.assertLess(sort['rect']['x'], store['rect']['x'])
+        self.assertEqual(sort['rect']['width'], 174)
+        self.assertEqual(sort['rect']['height'], 92)
+        self.assertEqual(sort['filename'], store['filename'])
+        for key in ('width', 'height', 'scale'):
+            self.assertEqual(sort['rect'][key], store['rect'][key])
+        self.assertEqual(sort['pointSize'], store['pointSize'])
+
+    def test_compact_art_keeps_height_caps_and_four_states(self):
+        from PIL import Image
+        source = 'hd/global/ui/FrontEnd/HD/Final/FrontEnd_ButtonSmall.sprite'
+        original = romfs_art.sprite(self.romfs, source)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, DM_ANDROID_PRODUCT='1'):
+            files = product_ui_widgets.build_art(self.romfs, tmp)
+            raw = Path(next(iter(files.values()))).read_bytes()
+        self.assertEqual(raw[:4], b'SpA1')
+        self.assertEqual(struct.unpack_from('<HHII', raw, 4), (31,87,348,46))
+        self.assertEqual(struct.unpack_from('<H', raw, 20)[0], 4)
+        image = Image.frombytes('RGBA', (348,46), raw[40:])
+        for frame in range(4):
+            self.assertEqual(image.crop((87*frame,0,87*frame+16,46)).tobytes(),
+                             original.crop((183*frame,0,183*frame+16,46)).tobytes())
+            self.assertEqual(image.crop((87*(frame+1)-16,0,87*(frame+1),46)).tobytes(),
+                             original.crop((183*(frame+1)-16,0,183*(frame+1),46)).tobytes())
+
     def test_sort_matches_native_store_art_and_dimensions(self):
         inventory = layout_patch.load_text(self.final[INV])
         store = named(inventory, 'TouchStore')['fields']
-        for path in (INV, BANK):
+        for path in (INV,):
             sort = named(layout_patch.load_text(self.final[path]), 'TouchProductSort')['fields']
             self.assertEqual(sort['filename'], store['filename'])
             self.assertEqual(sort['rect']['width'], store['rect']['width'])
             self.assertEqual(sort['rect']['scale'], store['rect']['scale'])
             self.assertEqual(sort['rect']['height'], 92)
-            self.assertEqual(sort['pointSize'], 40)
+            self.assertEqual(sort['pointSize'], 36)
+        bank = named(layout_patch.load_text(self.final[BANK]), 'TouchProductSort')['fields']
+        self.assertEqual(bank['filename'], 'FrontEnd/HD/Final/FrontEnd_ButtonSmall')
+        self.assertEqual(bank['rect'], {'x':1100, 'y':1300, 'width':366, 'height':92, 'scale':.74})
 
     def test_inventory_sort_has_exclusive_click_space(self):
         root = layout_patch.load_text(self.final[INV])
@@ -103,7 +137,7 @@ class ProductPipeline(unittest.TestCase):
             with self.subTest(control=name):
                 self.assertFalse(overlaps(sort, bounds(named(root, name), self.romfs)), name + ' must remain independently clickable')
         self.assertEqual(named(root, 'TouchStore')['fields']['rect'],
-                         {'x': 916, 'y': 1323, 'width': 366, 'scale': .74})
+                         {'x': 1058, 'y': 1323, 'width': 174, 'height':92, 'scale': .74})
         # Original inventory grid (98-unit cells), gold backing and panel edge
         # measured from the actual 3.3.94012 controller inheritance/profile.
         for name, rect in (('grid', (216, 893, 1196, 1285)),
