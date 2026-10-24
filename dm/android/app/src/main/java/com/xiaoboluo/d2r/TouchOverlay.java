@@ -684,9 +684,10 @@ public final class TouchOverlay extends View {
             if (i==0) mapControl(canvas,layout[p],layout[p+1],r,layout[p+4]!=0);
             else quickSkillControl(canvas,i,layout[p],layout[p+1],r,layout[p+4]!=0,quickLabels[i]);
         }
-        // 摇杆：面板开着、死亡时不画；底盘在起点，摇杆头按推量偏移（同 iOS）。 | Joystick: not drawn with a panel open or when dead; base at the origin, thumb offset by the deflection (as iOS).
+        // Floating joystick: show at this finger's clamped DOWN origin only
+        // while owned. The enabled geometry still reserves room for info HUDs.
         int jp=4+12*5;
-        if (layout[jp+3]!=0 && !navigation && layout[HUD+14]==0 && layout[jp+2]>0) {
+        if (layout[jp+3]!=0 && layout[jp+4]!=0 && !navigation && layout[HUD+14]==0 && layout[jp+2]>0) {
             float jx=layout[jp],jy=layout[jp+1],jr=layout[jp+2]; boolean active=layout[jp+4]!=0;
             drawArt(canvas,"stick:1:"+(active?1:0),jx-jr,jy-jr,2*jr,(bc,side,t,sc)->joyBaseArt(bc,side,active));
             float tx=jx+layout[HUD+16]/32767f*jr, ty=jy-layout[HUD+17]/32767f*jr, th=23*k;
