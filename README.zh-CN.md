@@ -1,3 +1,61 @@
+# D2R Mobile · Android 增强实验分支
+
+这是 [jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) 的 Android 分支，不是原项目官方发行版。兼容层、Vulkan 后端、原有触控及整理／存放等玩法来自原项目及其贡献者；本分支主要补充 Android 驱动接入、界面入口、布局与设置。
+
+**仅提供工具和不含游戏内容的 APK。请使用你自己的游戏文件；本仓库和 Release 不提供游戏程序、资源、字体、着色器导入包或第三方驱动二进制。**
+
+[English](README.md) · [下载 Android 测试版](https://github.com/niesj-n/d2r-mobile/releases/tag/v2.8.3) · [原项目说明](https://github.com/jhaizhou-ops/d2r-mobile/blob/main/README.zh-CN.md)
+
+## 相对原项目增加了什么
+
+下表只描述已有实机操作或界面确认的范围，不把源码测试、设置值存在当成所有相关玩法都通过验收。
+
+| Android 增量 | 已确认范围与边界 |
+| --- | --- |
+| 第三方 Vulkan 驱动导入和选择 | 可以导入驱动 ZIP，选择系统或已导入驱动，重启后生效；已在本测试设备确认加载紫先生 T30。仅影响本应用，不替换系统驱动。 |
+| 性能悬浮窗 | 显示上屏采样帧率、帧间隔、GPU 耗时、3D 比例、目标／输出分辨率和电池温度；已有实际运行截图。它不是独立的 App／GPU 功耗计。 |
+| 屏幕按键布局和边距设置 | 调整技能区间距及与底栏的避让；边距设置放入自定义页。摇杆保留默认显示与原有落点浮动逻辑，左边距滑块不再把摇杆起手区推离屏幕左边。 |
+| 游戏内整理入口与底行布局 | 背包中新增原生按钮入口，“整理”和“存放”同高等宽并排，沿用原项目按钮样式。整理／存放算法不是本分支新增；本次实机确认是按钮呈现与布局，触点分发另有离线测试，不代表所有仓库类型的完整操作验收。 |
+
+帧率设置提供 **30／60／90／120 FPS** 目标选项，其中 **90／120 标为实验**。目标值不等于实际达到的帧率。本轮完整分档截图和功耗对照未完成，因此不宣称稳定高帧率或功耗优化收益，也不把它们计入已验证的性能成果。
+
+其余尚未完成实机场景验收的实验性改动，不计入上表。英文资源存在，但新增界面的全英文显示和语言联动仍未完成验收。
+
+## 第三方驱动与营地黑块／闪烁
+
+测试设备为 **Xiaomi 2509FPN0BC、SM8850／Adreno 840、Android 17**。测试者反馈：导入紫先生 **Turnip T30** 后，营地黑块和邪恶洞窟闪烁不再出现；既往诊断也确认实际加载的是 `vulkan.purple.so`。这是该设备与驱动组合的观察，**不是修复了系统驱动，也不保证其他设备或场景同样有效**。
+
+1. 自行取得适用于设备的驱动 ZIP。测试使用的 [紫先生 T30 发布页](https://github.com/MrPurple666/purple-turnip/releases/tag/vturnip_mrpurple_T30-toasted.adpkg) 仅作版本出处，不代表最新版或通用推荐。
+2. 在游戏内打开 **选项 → 自定义 → 第三方驱动管理**，选择“导入驱动 ZIP…”。
+3. 导入后确认驱动选择，关闭并重新打开应用后生效。
+4. 若有兼容性问题，在同一管理界面选择“系统驱动（默认）”，再重启应用。
+
+历史对照截图尚在本地预审，未作为同版本受控 A/B 或闪烁消失的图像证明发布。截图本身不能证明长期无闪烁。
+
+## 下载与安装
+
+- 当前公开测试包：[D2RMobile-niesj-v2.8.3.apk](https://github.com/niesj-n/d2r-mobile/releases/download/v2.8.3/D2RMobile-niesj-v2.8.3.apk)；[SHA-256 校验文件](https://github.com/niesj-n/d2r-mobile/releases/download/v2.8.3/D2RMobile-niesj-v2.8.3.apk.sha256)。应用内版本为 **2.0.17（20017）**，名称为“D2R Mobile 测试”。
+- 面向 ARM64 Android 12 及以上、Vulkan 1.1；实际兼容性取决于设备和驱动。本分支的新增功能验收范围有限，不代表全机型或全流程测试通过。
+- 包名为 `com.niesj.d2r.product`，可与原项目 App 共存。现有同包名、同签名测试版可覆盖安装；不会自动迁移原 App 的存档，操作前请自行备份。
+- **只有 APK 还不能运行游戏。** 已有本分支 v2.8.1 匹配材料的可继续复用；新安装需要用自己的 **Switch 3.3.94012 Update** 游戏文件，通过本分支工具生成材料。工具及依赖见 [Android 构建参考](dm/android/README.zh-CN.md) 和 [游戏文件说明](docs/GAME_FILES.zh-CN.md)；子文档保留了上游默认路径，本测试包的导入位置以本页下方为准。
+
+```sh
+python dm/tools/d2rm_android.py "你的 Update 目录" "输出目录"
+```
+
+将生成的整个 `android` 文件夹放到手机 `Download/S2X/D2R Niesj/android`，应用打开时会自动导入。游戏资源仍复用 `Download/S2X/D2R Mobile/data`，旧安装的 `Download/data` 路径也保留支持。请使用本分支／对应版本源码生成匹配材料，不要混用其他版本的覆盖层。生成材料含游戏内容，只供你自己使用，不要上传到仓库或 Release。
+
+## 来源、版本与验证边界
+
+- 原项目：[jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)，沿用其 MIT 许可证及署名。
+- 本测试包的开发基线：[e3756f8](https://github.com/jhaizhou-ops/d2r-mobile/commit/e3756f8942b40eba6c851e881828a5b1bda17fd6)，**不是“已同步最新上游”的声明**。
+- 实际 APK 编译提交：[fad876a](https://github.com/niesj-n/d2r-mobile/commit/fad876ad435b65755e5de47f8d7314356d17ac15)，Release 标签固定在该提交；README 的后续文档更新不更换这个已测试 APK。
+- 构建、静态检查、签名／16 KB 对齐／内容检查和独立源码审查已通过；实机确认只覆盖上表限定范围。偶发同步图形管线创建卡顿仍未修复，完整高帧率功耗测量也尚未完成。
+- 原项目 PR 仍处于本地预审阶段，尚未提交；向上游贡献时需要基于届时的上游版本选择性移植，保留上游已经合入的修复。
+
+<details>
+<summary>保留的原项目说明（仅供参考；其中平台、测试设备和性能数据不代表本分支的验证结果）</summary>
+
 # D2R Mobile
 
 **开源的《暗黑破坏神 II：狱火重生》术士君临兼容层，支持 iOS、macOS、安卓与鸿蒙。** 把你自己购买的 Nintendo Switch 版游戏（含「术士君临」资料片）完整带到 iPhone、iPad 和 Mac 上：原版内核原生执行，整套操作为触屏重做，稳定 60 帧，一秒进局。现在也有原生的 macOS 版（第一版）：Apple 芯片的 Mac 上双击启动，键盘、鼠标、手柄都能用。**v2.0 起有了安卓版**（社区移植）：同一份游戏程序在 ARM64 安卓手机上原生执行，图形在 Vulkan 上重新实现；骁龙 8+ 一代的手机上，营地、邪恶洞穴和奶牛关的战斗都是中位 60 帧，详见下面的「安卓版」；同一套引擎上还有鸿蒙版（社区移植，发布页下载未签名壳、自己重签即可，不用自己构建，见「鸿蒙版」）。Apple TV 4K（第三代 A15）有社区移植（开发者预览），只在作者的实机上到过职业选择画面，详见下面的设备表。
@@ -427,3 +485,5 @@ DM_MAC_M3=1 dm/tools/mac_app.sh      # macOS 15 – 25：产出 D2R Mobile M3.ap
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。第三方代码各自的许可证在其目录内，见 [docs/DEPENDENCIES.zh-CN.md](docs/DEPENDENCIES.zh-CN.md)。
+
+</details>

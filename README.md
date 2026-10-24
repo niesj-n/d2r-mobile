@@ -1,3 +1,61 @@
+# D2R Mobile · Android enhancement fork
+
+This is an Android-focused fork of [jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile), not an official upstream release. The compatibility layer, Vulkan backend, existing touch input, sorting/deposit logic and game modes come from upstream and its contributors. This fork mainly adds Android driver integration, UI entry points, layout and settings.
+
+**Tools and a content-free APK only. Bring your own game files. This repository and its Releases do not distribute the game program, assets, fonts, shader import packs or third-party driver binaries.**
+
+[中文](README.zh-CN.md) · [Android test release](https://github.com/niesj-n/d2r-mobile/releases/tag/v2.8.3) · [Upstream documentation](https://github.com/jhaizhou-ops/d2r-mobile)
+
+## What this fork adds
+
+The table deliberately limits each claim to the device operation or UI confirmation available. Source tests and an available setting do not establish complete gameplay validation.
+
+| Android addition | Confirmed scope and limits |
+| --- | --- |
+| Import and select third-party Vulkan drivers | Import a driver ZIP, select system/custom, then restart to apply. The Purple T30 library was confirmed loaded on the test device. Selection is app-local and does not replace the system driver. |
+| Performance overlay | Displays sampled presented FPS, frame interval, GPU time, 3D scale, target/output dimensions and battery temperature. Actual running screenshots exist. It is not an independent app/GPU power meter. |
+| Touch layout and edge settings | Skill spacing and clearance from the bottom HUD, with edge controls in Custom settings. The joystick retains its default display and upstream DOWN-anchored floating input; the left-edge slider no longer creates a stick-start exclusion strip. |
+| In-game Sort entry and footer layout | A native inventory button, beside Deposit, with equal height/width and original-style art. Sorting and deposit algorithms are upstream features. Device acceptance covers button presentation/layout; touch dispatch has host-test coverage. This does not validate every stash type or inventory operation. |
+
+Target frame-rate options include **30 / 60 / 90 / 120 FPS**; **90 and 120 are experimental**. A selected target is not a guarantee of achieved FPS. The complete per-mode screenshot and power comparison remains unfinished, so this release claims neither stable high FPS nor a power-efficiency improvement.
+
+Other experimental changes without completed device-scenario acceptance are excluded from the verified table. English resources exist, but complete English UI fitting and language synchronization have not been device-validated.
+
+## Custom drivers: camp black blocks and flicker
+
+The test device is a **Xiaomi 2509FPN0BC, SM8850 / Adreno 840, Android 17**. The tester reported that the camp black blocks and Den of Evil flicker stopped after importing **MrPurple Turnip T30**; an earlier diagnostic export also confirmed `vulkan.purple.so` was actually loaded. This is an observation for that device/driver combination, **not a system-driver fix or a compatibility guarantee for other devices and scenes**.
+
+1. Obtain a driver ZIP suitable for your device. The tested [MrPurple T30 release](https://github.com/MrPurple666/purple-turnip/releases/tag/vturnip_mrpurple_T30-toasted.adpkg) is linked for provenance, not as a latest-version or universal recommendation.
+2. Open **Options → Custom → Driver settings**, then choose **Import driver ZIP…**.
+3. Confirm the selection, close the app and reopen it to apply.
+4. To revert, select **System driver (default)** in the same manager and restart.
+
+Historical comparison images remain in local review. They are not published as a same-build controlled A/B test or proof that flicker can never recur; a still screenshot cannot establish that.
+
+## Download and install
+
+- Test APK: [D2RMobile-niesj-v2.8.3.apk](https://github.com/niesj-n/d2r-mobile/releases/download/v2.8.3/D2RMobile-niesj-v2.8.3.apk) · [SHA-256 checksum](https://github.com/niesj-n/d2r-mobile/releases/download/v2.8.3/D2RMobile-niesj-v2.8.3.apk.sha256). Internal app version: **2.0.17 (20017)**; label: **D2R Mobile 测试**.
+- ARM64 Android 12+, Vulkan 1.1. Compatibility depends on the device and driver. Limited acceptance of this fork's additions is not full-device or full-game certification.
+- Package ID: `com.niesj.d2r.product`. It can coexist with the upstream app. An existing test build with the same package/signature can be updated in place. Upstream app saves are not migrated automatically; make your own backup first.
+- **The APK alone cannot run the game.** Existing matching v2.8.1 materials remain usable. A new installation must generate matching materials from your own **Switch 3.3.94012 Update** using this fork's tools. See the [Android build/dependency reference](dm/android/README.md) and [game-file instructions](docs/GAME_FILES.md). Those subdocuments retain upstream defaults; use this page's fork-specific import path below for this test APK.
+
+```sh
+python dm/tools/d2rm_android.py "your Update directory" "output directory"
+```
+
+Copy the complete generated `android` folder to `Download/S2X/D2R Niesj/android`; the app imports it on launch. Game data is reused from `Download/S2X/D2R Mobile/data`, with the older `Download/data` path also supported. Generate from this fork/the matching release source rather than mixing another version's overlay. The generated materials contain game content: keep them private and do not upload them to the repository or Releases.
+
+## Provenance and validation
+
+- Original project: [jhaizhou-ops/d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile). Its MIT license and attribution are retained.
+- Development baseline: [e3756f8](https://github.com/jhaizhou-ops/d2r-mobile/commit/e3756f8942b40eba6c851e881828a5b1bda17fd6). **This does not claim a full sync with current upstream.**
+- Exact APK build commit: [fad876a](https://github.com/niesj-n/d2r-mobile/commit/fad876ad435b65755e5de47f8d7314356d17ac15). The release tag pins that commit; later README-only updates do not replace the tested APK.
+- Source build, lint, signing / 16 KB alignment / content checks and independent source review passed. Device acceptance is limited to the table above. Occasional synchronous graphics-pipeline creation stalls remain unresolved, and the full high-FPS power comparison is unfinished.
+- Upstream PR proposals remain in local review and have not been submitted. Contributions must be selectively ported onto the upstream version used at that time, preserving already-merged fixes.
+
+<details>
+<summary>Preserved upstream README (reference only; its platforms, test devices and performance figures are not validation results for this fork)</summary>
+
 # D2R Mobile
 
 **An open-source compatibility layer for Diablo II: Resurrected with the Reign of the Warlock expansion, for iOS, macOS, Android and HarmonyOS.** It brings the Nintendo Switch release you bought, expansion included, to iPhone, iPad and Mac in full: the original game code runs natively, every control is rebuilt for touch, the frame rate holds at 60 fps, and you are in a game one second after the main menu. There is now a native macOS version as well (first version): on an Apple silicon Mac it starts on double-click and works with keyboard, mouse and gamepad. **Since v2.0 there is an Android version** (community port): the same game program executes natively on ARM64 Android phones, with the graphics reimplemented on Vulkan; on a Snapdragon 8+ Gen 1 phone the camp and the Den of Evil and Cow Level fights all run at a median 60 fps (see "Android" below); a HarmonyOS version runs on the same engine (community port: an unsigned shell from the Releases page that you re-sign yourself, nothing to build; see "HarmonyOS"). Apple TV 4K (3rd generation, A15) has a community port (developer preview) that has reached the character-selection screen only on its author's device; see the device table below.
@@ -427,3 +485,5 @@ This project stands on the open-source work below. Thank you to its authors and 
 ## License
 
 MIT, see [LICENSE](LICENSE). Third-party code keeps its own license in its own directory; see [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
+
+</details>
